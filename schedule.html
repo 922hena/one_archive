@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="ONE ARCHIVE 미사 일정. 로그인한 사용자의 일정만 저장하고 다시 불러옵니다." />
+  <meta name="theme-color" content="#f3f3f1" />
+  <title>ONE ARCHIVE — 미사 일정</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="schedule-page">
+  <a class="skip-link" href="#main">본문으로 바로가기</a>
+
+  <header class="site-header" data-header>
+    <div class="header-inner shell">
+      <a class="wordmark" href="index.html" aria-label="ONE ARCHIVE 소개로 이동">
+        <span>ONE</span><span>ARCHIVE</span>
+      </a>
+      <a class="quiet-link" href="index.html">소개</a>
+    </div>
+  </header>
+
+  <main id="main" class="schedule-main">
+    <div class="shell schedule-layout">
+      <div class="schedule-intro">
+        <p class="eyebrow">MY SCHEDULE</p>
+        <h1>미사 일정</h1>
+        <p class="schedule-lead">같은 날짜에도 미사를 여러 번 저장할 수 있습니다. 저장한 일정은 새로고침 후에 다시 불러옵니다.</p>
+        <p id="account-line" class="account-line" hidden></p>
+        <button id="logout-button" class="text-button" type="button" hidden>로그아웃</button>
+      </div>
+
+      <div class="schedule-panels">
+        <p id="setup-message" class="notice" hidden></p>
+
+        <section id="auth-panel" class="panel-card" aria-labelledby="auth-title">
+          <h2 id="auth-title">로그인</h2>
+          <form id="auth-form">
+            <label class="field">
+              <span>이메일</span>
+              <input id="email" name="email" type="email" autocomplete="email" required />
+            </label>
+            <label class="field">
+              <span>비밀번호</span>
+              <input id="password" name="password" type="password" autocomplete="current-password" minlength="6" required />
+            </label>
+            <div class="form-actions">
+              <button id="login-button" class="primary-button" type="submit">로그인</button>
+              <button id="signup-button" class="text-button" type="button">회원가입</button>
+            </div>
+          </form>
+          <p id="auth-message" class="notice" role="status" hidden></p>
+        </section>
+
+        <section id="schedule-panel" class="panel-card" aria-labelledby="schedule-title" hidden>
+          <h2 id="schedule-title">일정 추가</h2>
+          <form id="schedule-form">
+            <label class="field">
+              <span>날짜</span>
+              <input id="service-date" name="service_date" type="date" required />
+            </label>
+            <div class="field">
+              <span id="time-label">시간</span>
+              <div class="time-selects">
+                <label class="time-part">
+                  <span>시</span>
+                  <select id="service-hour" name="service_hour" required>
+                    <option value="">시 선택</option>
+                  </select>
+                </label>
+                <label class="time-part">
+                  <span>분</span>
+                  <select id="service-minute" name="service_minute" required>
+                    <option value="">분 선택</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <label class="field">
+              <span>성당 또는 장소</span>
+              <input id="place" name="place" type="text" maxlength="200" required />
+            </label>
+            <label class="field">
+              <span>역할</span>
+              <select id="role" name="role" required>
+                <option value="accompanist">미사반주</option>
+                <option value="conductor">미사지휘</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>성가대 이름 <em>선택</em></span>
+              <input id="choir-name" name="choir_name" type="text" maxlength="200" />
+            </label>
+            <div class="form-actions">
+              <button id="save-button" class="primary-button" type="submit">일정 저장</button>
+            </div>
+          </form>
+          <p id="save-message" class="notice" role="status" hidden></p>
+
+          <h2 id="list-title">저장된 일정</h2>
+          <div id="schedule-list" class="schedule-list" aria-labelledby="list-title" aria-live="polite"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script type="module" src="schedule.js"></script>
+</body>
+</html>
