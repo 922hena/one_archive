@@ -81,3 +81,7 @@ tabs.forEach((tab, index) => {
 deviceNavButtons.forEach((button) => {
   button.addEventListener("click", () => showPanel(button.dataset.deviceNav));
 });
+
+document.querySelector(".add-score")?.addEventListener("click", () => {
+  window.location.href = "scores.html";
+});
