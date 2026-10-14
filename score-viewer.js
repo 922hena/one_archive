@@ -1,6 +1,32 @@
 const BUCKET = "scores";
 const SIGNED_URL_SECONDS = 600;
 
+/* 악보 하나의 페이지 정보(서명 URL 포함)만 돌려줍니다. 한 장씩 넘겨 보는 뷰어에서 사용합니다. */
+export async function fetchScorePages(supabase, scoreId) {
+  const { data, error } = await supabase
+    .from("score_pages")
+    .select("page_no, storage_path, mime_type, byte_size")
+    .eq("score_id", scoreId)
+    .order("page_no", { ascending: true });
+  if (error) throw error;
+
+  const rows = data ?? [];
+  if (rows.length === 0) return [];
+
+  const { data: signed, error: signError } = await supabase.storage
+    .from(BUCKET)
+    .createSignedUrls(rows.map((row) => row.storage_path), SIGNED_URL_SECONDS);
+  if (signError) throw signError;
+
+  const byPath = new Map((signed ?? []).filter((entry) => entry.signedUrl).map((entry) => [entry.path, entry.signedUrl]));
+  return rows.map((row) => ({
+    pageNo: row.page_no,
+    mimeType: row.mime_type,
+    byteSize: row.byte_size,
+    url: byPath.get(row.storage_path) ?? ""
+  }));
+}
+
 /* 악보 하나의 페이지(사진 / PDF)를 화면에 넣을 요소 목록으로 만들어 돌려줍니다. 파일은 다시 올리지 않고 기존 score_id를 그대로 씁니다. */
 export async function buildScorePageElements(supabase, scoreId, title) {
   const { data, error } = await supabase

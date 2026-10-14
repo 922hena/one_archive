@@ -1,7 +1,7 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
-import { buildScorePageElements } from "./score-viewer.js";
+import { buildScorePageElements, fetchScorePages } from "./score-viewer.js";
 
-/* 큰 역할 6가지 + 미사곡(세부 11가지). 어떤 역할이든 자유롭게 넣고 뺄 수 있습니다. */
+/* 역할 목록. 어떤 역할이든 자유롭게 넣고 뺄 수 있습니다. */
 const MAIN_ROLES = [
   ["entrance", "입당성가"],
   ["offertory_1", "봉헌성가 1"],
@@ -55,8 +55,7 @@ const MASS_PART_VALUES = new Set(MASS_PART_ROLES.map(([value]) => value));
 const ROLE_LABELS = Object.fromEntries([...MAIN_ROLES, ...MASS_PART_ROLES]);
 
 function roleBadgeText(role) {
-  const label = ROLE_LABELS[role] ?? "역할";
-  return MASS_PART_VALUES.has(role) ? `미사곡 · ${label}` : label;
+  return ROLE_LABELS[role] ?? "역할";
 }
 const MASS_ROLE_LABELS = { accompanist: "미사반주", conductor: "미사지휘" };
 const MAX_ORDER = 999;
@@ -101,6 +100,17 @@ const linkConfirm = $("#link-confirm");
 const linkCancel = $("#link-cancel");
 const linkList = $("#link-list");
 const showAllSlots = $("#show-all-slots");
+const showTemplateSlots = $("#show-template-slots");
+const showTemplateLabel = $("#show-template-label");
+const showTemplateText = $("#show-template-text");
+const editSlotsButton = $("#edit-slots-button");
+const slotsEditor = $("#slots-editor");
+const slotsRoles = $("#slots-roles");
+const slotsTemplates = $("#slots-templates");
+const slotsTemplatesBox = $("#slots-templates-box");
+const slotsMessage = $("#slots-message");
+const slotsSave = $("#slots-save");
+const slotsCancel = $("#slots-cancel");
 
 const params = new URLSearchParams(window.location.search);
 const massIdParam = params.get("id") ?? "";
@@ -112,6 +122,9 @@ let authBusy = false;
 let busy = false;
 let loadToken = 0;
 let links = [];
+let massTemplateRoles = new Set();
+let massTemplateName = null;
+let massBase = [];
 let myScores = null;
 let chosenScore = null;
 const openViewers = new Set();
@@ -182,6 +195,11 @@ function makeButton(label, className, onClick, disabled = false, ariaLabel = lab
 
 /* ---------- 미사 + 연결 목록 ---------- */
 
+function renderMassMeta() {
+  const label = massTemplateName ? `미사곡 · ${massTemplateName}` : "";
+  massMeta.textContent = [...massBase, label].filter(Boolean).join(" · ");
+}
+
 async function loadMass() {
   const token = ++loadToken;
   const userId = activeUserId;
@@ -197,7 +215,7 @@ async function loadMass() {
 
   const { data: mass, error } = await supabase
     .from("mass_schedules")
-    .select("id, service_date, service_time, place, role, choir_name")
+    .select("id, service_date, service_time, place, role, choir_name, template_name, template_roles")
     .eq("id", massId)
     .maybeSingle();
   if (token !== loadToken || activeUserId !== userId) return;
@@ -214,7 +232,10 @@ async function loadMass() {
 
   addLinkButton.hidden = false;
   massTitle.textContent = [formatDate(mass.service_date), formatTime(mass.service_time)].filter(Boolean).join(" · ");
-  massMeta.textContent = [mass.place, MASS_ROLE_LABELS[mass.role], mass.choir_name].filter(Boolean).join(" · ");
+  massTemplateRoles = new Set(Array.isArray(mass.template_roles) ? mass.template_roles : []);
+  massTemplateName = mass.template_name ?? null;
+  massBase = [mass.place, MASS_ROLE_LABELS[mass.role], mass.choir_name];
+  renderMassMeta();
   await loadLinks(token);
 }
 
@@ -246,6 +267,8 @@ async function loadLinks(token = loadToken) {
 function renderLinks() {
   linkList.replaceChildren();
   const showAll = showAllSlots.checked;
+  showTemplateLabel.hidden = massTemplateRoles.size === 0;
+  showTemplateText.textContent = `${massTemplateName ?? "이 미사곡"} 순서 보기`;
   const byRole = new Map();
   links.forEach((link) => {
     if (!byRole.has(link.music_role)) byRole.set(link.music_role, []);
@@ -254,7 +277,8 @@ function renderLinks() {
 
   ROLE_ORDER.forEach((role) => {
     const roleLinks = byRole.get(role) ?? [];
-    if (roleLinks.length === 0 && !showAll && !KEY_SLOTS.has(role)) return;
+    const fromTemplate = showTemplateSlots.checked && massTemplateRoles.has(role);
+    if (roleLinks.length === 0 && !showAll && !KEY_SLOTS.has(role) && !fromTemplate) return;
 
     const slot = document.createElement("li");
     slot.className = "link-slot";
@@ -292,7 +316,7 @@ function renderLinks() {
   if (links.length === 0) {
     const hint = document.createElement("li");
     hint.className = "empty-copy";
-    hint.textContent = "특송, 영성체후 묵상곡, 후주에는 바로 악보를 연결할 수 있습니다. 다른 순서는 '악보 연결'이나 '모든 순서 보기'를 이용하세요.";
+    hint.textContent = "특송, 영성체후 묵상곡, 후주에는 바로 악보를 연결할 수 있습니다. 다른 순서는 '악보 연결', '모든 순서 보기', '보일 순서 고르기'를 이용하세요.";
     linkList.prepend(hint);
   }
 }
@@ -308,7 +332,14 @@ function buildLinkCard(link) {
     head.className = "link-head";
     const name = document.createElement("h4");
     name.className = "link-title";
-    name.textContent = title;
+    const nameButton = document.createElement("button");
+    nameButton.type = "button";
+    nameButton.className = "link-title-button";
+    nameButton.textContent = title;
+    nameButton.disabled = pageCount === 0;
+    nameButton.setAttribute("aria-label", `${title} 넘겨 보기`);
+    nameButton.addEventListener("click", () => openReader(link));
+    name.append(nameButton);
     const count = document.createElement("span");
     count.className = "link-count";
     count.textContent = pageCount > 0 ? `${pageCount}개` : "";
@@ -342,13 +373,14 @@ function buildLinkCard(link) {
     const controls = document.createElement("div");
     controls.className = "link-controls";
     const viewButton = makeButton(
-      openViewers.has(link.id) ? "접기" : "악보 보기",
+      openViewers.has(link.id) ? "접기" : "펼쳐 보기",
       "strip-button",
       () => toggleViewer(link, viewer, viewButton),
       pageCount === 0,
       `${title} ${openViewers.has(link.id) ? "접기" : "보기"}`
     );
     controls.append(
+      makeButton("넘겨 보기", "strip-button strong", () => openReader(link), pageCount === 0, `${title} 넘겨 보기`),
       viewButton,
       makeButton("연결 해제", "strip-button danger", () => unlink(link, title), false, `${title} 연결 해제`)
     );
@@ -380,7 +412,7 @@ function toggleViewer(link, viewer, button) {
     openViewers.delete(link.id);
     viewer.hidden = true;
     viewer.replaceChildren();
-    button.textContent = "악보 보기";
+    button.textContent = "펼쳐 보기";
     return;
   }
   openViewers.add(link.id);
@@ -470,8 +502,9 @@ function populateRoles(container) {
 
   const partsHead = document.createElement("div");
   partsHead.className = "role-parts-head";
-  const partsTitle = document.createElement("strong");
-  partsTitle.textContent = "미사곡";
+  const partsTitle = document.createElement("span");
+  partsTitle.className = "role-parts-label";
+  partsTitle.textContent = "자비송 ~ 하느님의 어린양";
   const partBoxes = () => [...container.querySelectorAll(".role-parts input")];
   const syncToggle = () => {
     toggleAll.textContent = partBoxes().every((box) => box.checked) ? "전체 해제" : "전체 선택";
@@ -511,7 +544,7 @@ function clearRoleChecks(container = rolePicker) {
   setRoleChecks(container, []);
 }
 
-/* ---------- 미사틀 (최대 3개 저장) ---------- */
+/* ---------- 미사곡 (최대 3개 저장) ---------- */
 
 const MAX_TEMPLATES = 3;
 let templates = [];
@@ -528,7 +561,7 @@ function templateSummary(template) {
   let partsAdded = false;
   roles.forEach((role) => {
     if (allParts && MASS_PART_VALUES.has(role)) {
-      if (!partsAdded) labels.push("미사곡 전체");
+      if (!partsAdded) labels.push("자비송~하느님의 어린양 전체");
       partsAdded = true;
       return;
     }
@@ -546,7 +579,7 @@ async function loadTemplates() {
     .order("slot_no", { ascending: true });
   if (activeUserId !== userId) return;
   if (error) {
-    setNotice(templateMessage, "미사틀을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.", "info");
+    setNotice(templateMessage, "미사곡을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.", "info");
     return;
   }
   templates = (data ?? []).map((row) => ({ ...row, roles: Array.isArray(row.roles) ? row.roles : [] }));
@@ -577,7 +610,7 @@ function renderTemplates() {
   if (templates.length === 0) {
     const empty = document.createElement("li");
     empty.className = "empty-copy";
-    empty.textContent = "저장된 미사틀이 없습니다. 자주 쓰는 구성을 최대 3개까지 저장해 두세요.";
+    empty.textContent = "저장된 미사곡이 없습니다. 자주 쓰는 구성을 최대 3개까지 저장해 두세요.";
     templateList.append(empty);
   }
   templateNewButton.hidden = templates.length >= MAX_TEMPLATES || !templateForm.hidden;
@@ -601,6 +634,60 @@ function renderPickerTemplates() {
       )
     );
   });
+
+  slotsTemplates.replaceChildren();
+  slotsTemplatesBox.hidden = templates.length === 0;
+  templates.forEach((template) => {
+    slotsTemplates.append(
+      makeButton(
+        templateTitle(template),
+        "strip-button",
+        () => setRoleChecks(slotsRoles, template.roles),
+        false,
+        `${templateTitle(template)} 구성으로 선택`
+      )
+    );
+  });
+}
+
+/* ---------- 이 미사에서 보일 순서 고르기 ---------- */
+
+function openSlotsEditor() {
+  const current = massTemplateRoles.size > 0 ? [...massTemplateRoles] : [];
+  setRoleChecks(slotsRoles, current);
+  setNotice(slotsMessage, "", "info");
+  slotsEditor.hidden = false;
+  editSlotsButton.hidden = true;
+  slotsEditor.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
+
+function closeSlotsEditor() {
+  slotsEditor.hidden = true;
+  editSlotsButton.hidden = false;
+}
+
+async function saveSlots() {
+  if (busy || !massId) return;
+  const roles = checkedRoles(slotsRoles);
+  busy = true;
+  slotsSave.disabled = true;
+  const update = roles.length > 0
+    ? { template_name: massTemplateName ?? "직접 구성", template_roles: roles }
+    : { template_name: null, template_roles: null };
+  const { error } = await supabase.from("mass_schedules").update(update).eq("id", massId);
+  busy = false;
+  slotsSave.disabled = false;
+  if (error) {
+    setNotice(slotsMessage, "보일 순서를 저장하지 못했습니다. 다시 시도해 주세요.", "info");
+    return;
+  }
+  massTemplateRoles = new Set(roles);
+  massTemplateName = update.template_name;
+  showTemplateSlots.checked = roles.length > 0;
+  renderMassMeta();
+  closeSlotsEditor();
+  setNotice(massMessage, "보일 순서를 저장했습니다.", "success");
+  renderLinks();
 }
 
 function openTemplateEditor(template) {
@@ -634,7 +721,7 @@ async function saveTemplate() {
   const name = templateName.value.trim();
   const roles = checkedRoles(templateRoles);
   if (!name) {
-    setNotice(templateMessage, "미사틀 이름을 입력해 주세요. 예: 아침미사", "info");
+    setNotice(templateMessage, "미사곡 이름을 입력해 주세요. 예: 아침미사", "info");
     templateName.focus();
     return;
   }
@@ -657,7 +744,7 @@ async function saveTemplate() {
     if (!slot) {
       busy = false;
       templateSave.disabled = false;
-      setNotice(templateMessage, "미사틀은 3개까지 저장할 수 있습니다. 하나를 삭제한 뒤 만들어 주세요.", "info");
+      setNotice(templateMessage, "미사곡은 3개까지 저장할 수 있습니다. 하나를 삭제한 뒤 만들어 주세요.", "info");
       return;
     }
     ({ error } = await supabase.from("mass_templates").insert({ slot_no: slot, name, roles }));
@@ -667,19 +754,19 @@ async function saveTemplate() {
   if (error) {
     setNotice(
       templateMessage,
-      error.code === "23505" ? "이미 같은 번호의 미사틀이 있습니다. 화면을 새로 고쳐 주세요." : "미사틀을 저장하지 못했습니다. 다시 시도해 주세요.",
+      error.code === "23505" ? "이미 같은 번호의 미사곡이 있습니다. 화면을 새로 고쳐 주세요." : "미사곡을 저장하지 못했습니다. 다시 시도해 주세요.",
       "info"
     );
     return;
   }
   closeTemplateEditor();
-  setNotice(templateMessage, "미사틀을 저장했습니다.", "success");
+  setNotice(templateMessage, "미사곡을 저장했습니다.", "success");
   await loadTemplates();
 }
 
 async function deleteTemplate(template) {
   if (busy) return;
-  if (!window.confirm(`'${templateTitle(template)}' 미사틀을 삭제할까요? 이미 연결한 악보는 그대로 남습니다.`)) return;
+  if (!window.confirm(`'${templateTitle(template)}' 미사곡을 삭제할까요? 이미 연결한 악보는 그대로 남습니다.`)) return;
   busy = true;
   const { error } = await supabase.from("mass_templates").delete().eq("id", template.id);
   busy = false;
@@ -688,7 +775,7 @@ async function deleteTemplate(template) {
     return;
   }
   if (editingTemplate?.id === template.id) closeTemplateEditor();
-  setNotice(templateMessage, "미사틀을 삭제했습니다.", "success");
+  setNotice(templateMessage, "미사곡을 삭제했습니다.", "success");
   await loadTemplates();
 }
 
@@ -817,6 +904,223 @@ async function confirmLink() {
   await loadLinks();
 }
 
+/* ---------- 넘겨 보기 (전체 화면, 이 미사의 악보를 순서대로) ---------- */
+
+const reader = $("#reader");
+const readerTitle = $("#reader-title");
+const readerSub = $("#reader-sub");
+const readerStage = $("#reader-stage");
+const readerPrev = $("#reader-prev");
+const readerNext = $("#reader-next");
+const readerCounter = $("#reader-counter");
+const readerClose = $("#reader-close");
+const PAGE_CACHE_MS = 8 * 60 * 1000;
+
+let readerItems = [];
+let readerLink = 0;
+let readerPage = 0;
+let readerToken = 0;
+const pageCache = new Map();
+
+function readerPages(scoreId) {
+  const cached = pageCache.get(scoreId);
+  if (cached && Date.now() - cached.at < PAGE_CACHE_MS) return cached.promise;
+  const promise = fetchScorePages(supabase, scoreId).catch((error) => {
+    pageCache.delete(scoreId);
+    throw error;
+  });
+  pageCache.set(scoreId, { at: Date.now(), promise });
+  return promise;
+}
+
+function openReader(link) {
+  const items = links.filter((item) => embeddedScore(item).pageCount > 0);
+  const start = items.findIndex((item) => item.id === link.id);
+  if (start === -1) return;
+  readerItems = items;
+  readerLink = start;
+  readerPage = 0;
+  reader.hidden = false;
+  document.body.style.overflow = "hidden";
+  readerClose.focus();
+  renderReader();
+}
+
+function closeReader() {
+  readerToken += 1;
+  reader.hidden = true;
+  readerStage.replaceChildren();
+  readerItems = [];
+  pageCache.clear();
+  if (!massPanel.hidden || !authPanel.hidden) document.body.style.overflow = "";
+}
+
+async function renderReader() {
+  if (reader.hidden) return;
+  const token = ++readerToken;
+  const link = readerItems[readerLink];
+  if (!link) return;
+  const { title } = embeddedScore(link);
+  readerTitle.textContent = title;
+  readerSub.textContent = `${roleBadgeText(link.music_role)} · 악보 ${readerLink + 1}/${readerItems.length}`;
+  readerCounter.textContent = "";
+  readerPrev.disabled = true;
+  readerNext.disabled = true;
+
+  let pagesOfScore;
+  try {
+    pagesOfScore = await readerPages(link.score_id);
+  } catch {
+    if (token !== readerToken) return;
+    const message = document.createElement("p");
+    message.className = "reader-message";
+    message.textContent = "악보를 불러오지 못했습니다. 닫았다가 다시 열어 주세요.";
+    readerStage.replaceChildren(message);
+    return;
+  }
+  if (token !== readerToken) return;
+
+  if (pagesOfScore.length === 0) {
+    const message = document.createElement("p");
+    message.className = "reader-message";
+    message.textContent = "저장된 페이지가 없습니다.";
+    readerStage.replaceChildren(message);
+    readerCounter.textContent = "0/0";
+    updateReaderNav(0);
+    return;
+  }
+
+  readerPage = Math.min(Math.max(readerPage, 0), pagesOfScore.length - 1);
+  const page = pagesOfScore[readerPage];
+  readerCounter.textContent = `${readerPage + 1}/${pagesOfScore.length}`;
+
+  if (page.mimeType === "application/pdf") {
+    const box = document.createElement("div");
+    box.className = "reader-pdf";
+    const label = document.createElement("p");
+    label.textContent = `${page.pageNo}번 PDF`;
+    box.append(label);
+    if (page.url) {
+      const open = document.createElement("a");
+      open.className = "primary-button";
+      open.href = page.url;
+      open.target = "_blank";
+      open.rel = "noopener noreferrer";
+      open.textContent = "PDF 열기";
+      box.append(open);
+      if (window.matchMedia("(min-width: 900px)").matches) {
+        const frame = document.createElement("iframe");
+        frame.className = "reader-pdf-frame";
+        frame.src = page.url;
+        frame.title = `${title} ${page.pageNo}번 PDF`;
+        box.append(frame);
+      }
+    }
+    readerStage.replaceChildren(box);
+  } else {
+    const image = document.createElement("img");
+    image.className = "reader-image";
+    image.alt = `${title} ${page.pageNo}쪽`;
+    image.decoding = "async";
+    image.draggable = false;
+    if (page.url) image.src = page.url;
+    readerStage.replaceChildren(image);
+  }
+
+  updateReaderNav(pagesOfScore.length);
+  prefetchNext(pagesOfScore);
+}
+
+function updateReaderNav(pageCount) {
+  const hasPrev = readerPage > 0 || readerLink > 0;
+  const hasNext = readerPage < pageCount - 1 || readerLink < readerItems.length - 1;
+  readerPrev.disabled = !hasPrev;
+  readerNext.disabled = !hasNext;
+}
+
+function prefetchNext(pagesOfScore) {
+  const upcoming = pagesOfScore[readerPage + 1];
+  if (upcoming && upcoming.mimeType !== "application/pdf" && upcoming.url) {
+    const image = new Image();
+    image.src = upcoming.url;
+    return;
+  }
+  const nextLink = readerItems[readerLink + 1];
+  if (nextLink) readerPages(nextLink.score_id).catch(() => {});
+}
+
+async function readerStep(direction) {
+  if (reader.hidden) return;
+  const link = readerItems[readerLink];
+  if (!link) return;
+  let pagesOfScore;
+  try {
+    pagesOfScore = await readerPages(link.score_id);
+  } catch {
+    return;
+  }
+  if (direction > 0) {
+    if (readerPage < pagesOfScore.length - 1) {
+      readerPage += 1;
+    } else if (readerLink < readerItems.length - 1) {
+      readerLink += 1;
+      readerPage = 0;
+    } else {
+      return;
+    }
+  } else if (readerPage > 0) {
+    readerPage -= 1;
+  } else if (readerLink > 0) {
+    readerLink -= 1;
+    try {
+      const previous = await readerPages(readerItems[readerLink].score_id);
+      readerPage = Math.max(0, previous.length - 1);
+    } catch {
+      readerPage = 0;
+    }
+  } else {
+    return;
+  }
+  renderReader();
+}
+
+readerPrev.addEventListener("click", () => readerStep(-1));
+readerNext.addEventListener("click", () => readerStep(1));
+readerClose.addEventListener("click", closeReader);
+document.addEventListener("keydown", (event) => {
+  if (reader.hidden) return;
+  if (event.key === "ArrowRight") {
+    event.preventDefault();
+    readerStep(1);
+  } else if (event.key === "ArrowLeft") {
+    event.preventDefault();
+    readerStep(-1);
+  } else if (event.key === "Escape") {
+    closeReader();
+  }
+});
+
+/* 화면 양쪽 가장자리를 누르거나 좌우로 쓸어 넘깁니다. 확대 중에는 쓸어 넘기지 않습니다. */
+let touchStart = null;
+readerStage.addEventListener("touchstart", (event) => {
+  const zoomed = window.visualViewport && window.visualViewport.scale > 1.02;
+  touchStart = event.touches.length === 1 && !zoomed ? { x: event.touches[0].clientX, y: event.touches[0].clientY } : null;
+}, { passive: true });
+readerStage.addEventListener("touchend", (event) => {
+  if (!touchStart || event.changedTouches.length !== 1) return;
+  const dx = event.changedTouches[0].clientX - touchStart.x;
+  const dy = event.changedTouches[0].clientY - touchStart.y;
+  touchStart = null;
+  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) readerStep(dx < 0 ? 1 : -1);
+}, { passive: true });
+readerStage.addEventListener("click", (event) => {
+  if (!(event.target instanceof HTMLImageElement)) return;
+  const rect = event.target.getBoundingClientRect();
+  const ratio = (event.clientX - rect.left) / rect.width;
+  if (ratio < 0.3) readerStep(-1);
+  else if (ratio > 0.7) readerStep(1);
+});
+
 /* ---------- 로그인 ---------- */
 
 function koreanAuthError(error) {
@@ -874,6 +1178,11 @@ function showSignedOut() {
   activeUserId = null;
   loadToken += 1;
   links = [];
+  massTemplateRoles = new Set();
+  massTemplateName = null;
+  massBase = [];
+  closeSlotsEditor();
+  closeReader();
   myScores = null;
   chosenScore = null;
   openViewers.clear();
@@ -894,6 +1203,7 @@ function showSignedOut() {
 function boot() {
   populateRoles(rolePicker);
   populateRoles(templateRoles);
+  populateRoles(slotsRoles);
   const { url, key, missing, secret } = readConfig();
   if (secret) {
     setNotice(setupMessage, "공개용 Publishable key만 넣어 주세요. 비밀키는 사용하지 않습니다.", "info");
@@ -931,6 +1241,10 @@ authForm.addEventListener("submit", signIn);
 logoutButton.addEventListener("click", signOut);
 addLinkButton.addEventListener("click", () => openPicker([]));
 showAllSlots.addEventListener("change", renderLinks);
+showTemplateSlots.addEventListener("change", renderLinks);
+editSlotsButton.addEventListener("click", openSlotsEditor);
+slotsCancel.addEventListener("click", closeSlotsEditor);
+slotsSave.addEventListener("click", saveSlots);
 linkCancel.addEventListener("click", closePicker);
 linkConfirm.addEventListener("click", confirmLink);
 pickerSearch.addEventListener("input", renderPicker);

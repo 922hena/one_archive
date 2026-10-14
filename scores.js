@@ -45,6 +45,8 @@ const viewerPanel = $("#viewer-panel");
 const backButton = $("#back-button");
 const deleteButton = $("#delete-button");
 const viewerTitle = $("#viewer-title");
+import { loadScoreHistory, renderScoreHistory } from "./score-history.js";
+const viewerHistory = $("#viewer-history");
 const viewerMeta = $("#viewer-meta");
 const viewerMessage = $("#viewer-message");
 const viewerPages = $("#viewer-pages");
@@ -800,7 +802,19 @@ async function openViewer(score) {
   setNotice(viewerMessage, "", "info");
   viewerPages.replaceChildren();
   deleteButton.disabled = false;
+  viewerHistory.replaceChildren();
   showPanel("viewer");
+  loadScoreHistory(supabase, score.id)
+    .then((rows) => {
+      if (token === viewToken) renderScoreHistory(viewerHistory, rows);
+    })
+    .catch(() => {
+      if (token !== viewToken) return;
+      const note = document.createElement("p");
+      note.className = "empty-copy";
+      note.textContent = "연주 이력을 불러오지 못했습니다.";
+      viewerHistory.replaceChildren(note);
+    });
 
   const loading = document.createElement("p");
   loading.className = "empty-copy";
@@ -877,6 +891,7 @@ async function openViewer(score) {
 function closeViewer() {
   viewToken += 1;
   openScore = null;
+  viewerHistory.replaceChildren();
   viewerPages.replaceChildren();
   showPanel("library");
 }

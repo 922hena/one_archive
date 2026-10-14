@@ -22,10 +22,11 @@ const saveMessage = document.querySelector("#save-message");
 const scheduleList = document.querySelector("#schedule-list");
 const dateInput = document.querySelector("#service-date");
 const hourInput = document.querySelector("#service-hour");
-const minuteInput = document.querySelector("#service-minute");
 const placeInput = document.querySelector("#place");
 const roleInput = document.querySelector("#role");
 const choirInput = document.querySelector("#choir-name");
+const templateInput = document.querySelector("#template-select");
+let templates = [];
 
 const arrivedFromEmailLink = /(?:type=(?:signup|email|magiclink)|[?&#]code=)/.test(
   `${window.location.hash}${window.location.search}`
@@ -95,6 +96,8 @@ function showSignedOut() {
   saveButton.textContent = "일정 저장";
   setNotice(saveMessage, "", "info");
   scheduleList.replaceChildren();
+  templates = [];
+  renderTemplateOptions();
 }
 
 function showSignedIn(user) {
@@ -109,8 +112,8 @@ function showSignedIn(user) {
   }
 }
 
-function appendTimeOptions(select, max) {
-  for (let value = 0; value <= max; value += 1) {
+function appendTimeOptions(select, min, max) {
+  for (let value = min; value <= max; value += 1) {
     const option = document.createElement("option");
     const label = String(value).padStart(2, "0");
     option.value = label;
@@ -119,8 +122,35 @@ function appendTimeOptions(select, max) {
   }
 }
 
-appendTimeOptions(hourInput, 23);
-appendTimeOptions(minuteInput, 59);
+appendTimeOptions(hourInput, 6, 24);
+
+function renderTemplateOptions() {
+  const keep = templateInput.value;
+  templateInput.replaceChildren();
+  const none = document.createElement("option");
+  none.value = "";
+  none.textContent = "선택 안 함";
+  templateInput.append(none);
+  templates.forEach((template) => {
+    const option = document.createElement("option");
+    option.value = template.id;
+    option.textContent = `미사${template.slot_no}. ${template.name}`;
+    templateInput.append(option);
+  });
+  if (templates.some((template) => template.id === keep)) templateInput.value = keep;
+}
+
+async function loadTemplateChoices() {
+  const userId = activeUserId;
+  if (!supabase || !userId) return;
+  const { data, error } = await supabase
+    .from("mass_templates")
+    .select("id, slot_no, name, roles")
+    .order("slot_no", { ascending: true });
+  if (activeUserId !== userId) return;
+  templates = error ? [] : (data ?? []).filter((row) => Array.isArray(row.roles) && row.roles.length > 0);
+  renderTemplateOptions();
+}
 
 function formatDate(value) {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? "");
@@ -169,6 +199,13 @@ function renderSchedules(rows) {
       item.append(choir);
     }
 
+    if (typeof row.template_name === "string" && row.template_name.trim()) {
+      const templateLine = document.createElement("p");
+      templateLine.className = "schedule-choir";
+      templateLine.textContent = `미사곡 · ${row.template_name}`;
+      item.append(templateLine);
+    }
+
     if (typeof row.id === "string") {
       const scoresLink = document.createElement("a");
       scoresLink.className = "text-button";
@@ -201,7 +238,7 @@ async function loadSchedules() {
 
   const { data, error } = await supabase
     .from("mass_schedules")
-    .select("id, service_date, service_time, place, role, choir_name")
+    .select("id, service_date, service_time, place, role, choir_name, template_name")
     .order("service_date", { ascending: true })
     .order("service_time", { ascending: true });
 
@@ -304,9 +341,9 @@ function schedulePayload() {
   const place = placeInput.value.trim();
   const choir = choirInput.value.trim();
   const role = roleInput.value;
-  const serviceTime = `${hourInput.value}:${minuteInput.value}`;
-  if (!dateInput.value || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(serviceTime) || !place) {
-    return { error: "날짜, 시, 분, 장소를 모두 입력해 주세요." };
+  const serviceTime = `${hourInput.value}:00`;
+  if (!dateInput.value || !/^(?:0[6-9]|1\d|2[0-4]):00$/.test(serviceTime) || !place) {
+    return { error: "날짜, 시, 장소를 모두 입력해 주세요." };
   }
   if (!Object.hasOwn(ROLE_LABELS, role)) {
     return { error: "역할은 미사반주 또는 미사지휘 중에서 선택해 주세요." };
@@ -314,13 +351,16 @@ function schedulePayload() {
   if (place.length > 200 || choir.length > 200) {
     return { error: "장소와 성가대 이름은 200자 안으로 입력해 주세요." };
   }
+  const template = templates.find((item) => item.id === templateInput.value);
   return {
     value: {
       service_date: dateInput.value,
       service_time: serviceTime,
       place,
       role,
-      choir_name: choir || null
+      choir_name: choir || null,
+      template_name: template ? template.name : null,
+      template_roles: template ? template.roles : null
     }
   };
 }
@@ -348,7 +388,7 @@ async function saveSchedule(event) {
       return;
     }
     hourInput.value = "";
-    minuteInput.value = "";
+    templateInput.value = "";
     placeInput.value = "";
     choirInput.value = "";
     setNotice(saveMessage, "일정을 저장했습니다.", "success");
@@ -400,6 +440,7 @@ function boot() {
     if (changedUser || event === "INITIAL_SESSION" || event === "SIGNED_IN") {
       activeUserId = user.id;
       loadSchedules();
+      loadTemplateChoices();
     }
   });
 }

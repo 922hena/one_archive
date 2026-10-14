@@ -28,7 +28,7 @@
       <div class="schedule-intro">
         <p class="eyebrow">MASS SCORES</p>
         <h1>미사 악보</h1>
-        <p class="schedule-lead">저장한 악보를 이 미사의 입당성가, 봉헌성가, 미사곡 등에 자유롭게 연결하고 뺄 수 있습니다. 같은 악보를 여러 미사에 연결해도 파일은 다시 올리지 않습니다.</p>
+        <p class="schedule-lead">저장한 악보를 이 미사의 입당성가, 봉헌성가, 성체성가 등에 자유롭게 연결하고 뺄 수 있습니다. 같은 악보를 여러 미사에 연결해도 파일은 다시 올리지 않습니다.</p>
         <p id="account-line" class="account-line" hidden></p>
         <button id="logout-button" class="text-button" type="button" hidden>로그아웃</button>
       </div>
@@ -64,11 +64,11 @@
           <p id="mass-message" class="notice" role="status" hidden></p>
 
           <details id="template-box" class="template-box">
-            <summary>미사틀 관리 <em>최대 3개</em></summary>
+            <summary>미사곡 관리 <em>최대 3개</em></summary>
             <p class="hint">자주 쓰는 구성(예: 아침미사, 교중미사)을 저장해 두고 악보를 연결할 때 불러옵니다.</p>
             <p id="template-message" class="notice" role="status" hidden></p>
             <ul id="template-list" class="template-list"></ul>
-            <button id="template-new-button" class="strip-button" type="button">미사틀 만들기</button>
+            <button id="template-new-button" class="strip-button" type="button">미사곡 만들기</button>
             <div id="template-form" class="template-form" hidden>
               <h3 id="template-form-title"></h3>
               <label class="field">
@@ -94,7 +94,7 @@
             <div id="picker-form" class="picker-form" hidden>
               <p id="picker-selected" class="picker-selected"></p>
               <div id="picker-templates-box" class="picker-templates-box" hidden>
-                <span class="picker-templates-label">미사틀로 역할 한 번에 선택</span>
+                <span class="picker-templates-label">미사곡으로 역할 한 번에 선택</span>
                 <div id="picker-templates" class="picker-templates"></div>
               </div>
               <fieldset id="role-picker" class="role-picker">
@@ -111,16 +111,54 @@
             </div>
           </div>
 
-          <label class="show-all">
-            <input id="show-all-slots" type="checkbox" />
-            <span>모든 순서 보기 <em>비어 있는 순서에도 바로 악보 연결</em></span>
-          </label>
+          <div class="slots-bar">
+            <label class="show-all">
+              <input id="show-all-slots" type="checkbox" />
+              <span>모든 순서 보기 <em>비어 있는 순서에도 바로 악보 연결</em></span>
+            </label>
+            <label id="show-template-label" class="show-all" hidden>
+              <input id="show-template-slots" type="checkbox" />
+              <span id="show-template-text">이 미사곡 순서 보기</span>
+            </label>
+            <button id="edit-slots-button" class="strip-button" type="button">보일 순서 고르기</button>
+          </div>
+
+          <div id="slots-editor" class="template-form slots-editor" hidden>
+            <div id="slots-templates-box" class="picker-templates-box" hidden>
+              <span class="picker-templates-label">미사곡으로 한 번에 선택</span>
+              <div id="slots-templates" class="picker-templates"></div>
+            </div>
+            <fieldset id="slots-roles" class="role-picker">
+              <legend>이 미사에서 보일 순서 <em>특송, 영성체후 묵상곡, 후주는 항상 보입니다</em></legend>
+            </fieldset>
+            <p id="slots-message" class="notice" role="status" hidden></p>
+            <div class="form-actions">
+              <button id="slots-save" class="primary-button" type="button">저장</button>
+              <button id="slots-cancel" class="text-button" type="button">닫기</button>
+            </div>
+          </div>
 
           <ol id="link-list" class="link-list" aria-live="polite"></ol>
         </section>
       </div>
     </div>
   </main>
+
+  <div id="reader" class="reader" role="dialog" aria-modal="true" aria-label="악보 넘겨 보기" hidden>
+    <div class="reader-top">
+      <div class="reader-heading">
+        <strong id="reader-title" class="reader-title"></strong>
+        <span id="reader-sub" class="reader-sub"></span>
+      </div>
+      <button id="reader-close" class="reader-close" type="button">닫기</button>
+    </div>
+    <div id="reader-stage" class="reader-stage"></div>
+    <div class="reader-bottom">
+      <button id="reader-prev" class="reader-nav" type="button" aria-label="이전 페이지">‹ 이전</button>
+      <span id="reader-counter" class="reader-counter" aria-live="polite"></span>
+      <button id="reader-next" class="reader-nav" type="button" aria-label="다음 페이지">다음 ›</button>
+    </div>
+  </div>
 
   <script src="config.js"></script>
   <script type="module" src="mass.js"></script>
