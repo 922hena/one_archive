@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="ONE ARCHIVE 아카이브. 역할, 전례 시기, 작곡가, 날짜, 연주 횟수를 조합해 악보를 찾습니다." />
+  <meta name="theme-color" content="#f3f3f1" />
+  <title>ONE ARCHIVE — 아카이브 검색</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="schedule-page scores-page archive-page">
+  <a class="skip-link" href="#main">본문으로 바로가기</a>
+
+  <header class="site-header" data-header>
+    <div class="header-inner shell">
+      <a class="wordmark" href="index.html" aria-label="ONE ARCHIVE 소개로 이동">
+        <span>ONE</span><span>ARCHIVE</span>
+      </a>
+      <nav class="header-links" aria-label="화면 이동">
+        <a class="quiet-link" href="schedule.html">일정</a>
+        <a class="quiet-link" href="scores.html">악보</a>
+        <a class="quiet-link" href="index.html">소개</a>
+        <button id="logout-button" class="text-button" type="button" hidden>로그아웃</button>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="schedule-main">
+    <div class="shell schedule-layout">
+      <div class="schedule-intro">
+        <p class="eyebrow">ARCHIVE SEARCH</p>
+        <h1>아카이브</h1>
+        <p class="schedule-lead">모든 조건을 함께(AND) 만족하는 미사 기록만 모아서 악보별로 횟수를 셉니다. 비워 둔 조건은 적용하지 않습니다.</p>
+        <p id="account-line" class="account-line" hidden></p>
+      </div>
+
+      <div class="schedule-panels">
+        <p id="setup-message" class="notice" hidden></p>
+
+        <section id="auth-panel" class="panel-card" aria-labelledby="auth-title">
+          <h2 id="auth-title">로그인</h2>
+          <form id="auth-form">
+            <label class="field">
+              <span>이메일</span>
+              <input id="email" name="email" type="email" autocomplete="email" required />
+            </label>
+            <label class="field">
+              <span>비밀번호</span>
+              <input id="password" name="password" type="password" autocomplete="current-password" minlength="6" required />
+            </label>
+            <div class="form-actions">
+              <button id="login-button" class="primary-button" type="submit">로그인</button>
+            </div>
+          </form>
+          <p id="auth-message" class="notice" role="status" hidden></p>
+        </section>
+
+        <section id="search-panel" class="panel-card" aria-labelledby="search-title" hidden>
+          <h2 id="search-title">검색 조건</h2>
+          <form id="search-form" novalidate>
+            <fieldset class="archive-group">
+              <legend>미사 내 역할 <em>여러 개 선택 가능</em></legend>
+              <div id="f-roles" class="archive-checks"></div>
+            </fieldset>
+
+            <fieldset class="archive-group">
+              <legend>전례 시기 <em>12/25~주님 세례 축일이 성탄 시기</em></legend>
+              <div id="f-seasons" class="archive-checks"></div>
+            </fieldset>
+
+            <div class="archive-row">
+              <label class="field">
+                <span>특정 축일 <em>해당 날짜만</em></span>
+                <select id="f-feast"></select>
+              </label>
+              <label class="field">
+                <span>전례명 직접 검색 <em>예: 연중 제 29주일</em></span>
+                <input id="f-feast-text" type="text" maxlength="60" autocomplete="off" />
+              </label>
+            </div>
+
+            <div class="archive-row">
+              <label class="field">
+                <span>곡명</span>
+                <input id="f-title" type="text" maxlength="100" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span>작곡가</span>
+                <input id="f-composer" type="text" maxlength="100" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span>성당 · 미사 장소</span>
+                <input id="f-place" type="text" maxlength="100" autocomplete="off" />
+              </label>
+            </div>
+
+            <div class="archive-row">
+              <label class="field">
+                <span>날짜 시작</span>
+                <input id="f-from" type="date" />
+              </label>
+              <label class="field">
+                <span>날짜 끝</span>
+                <input id="f-to" type="date" />
+              </label>
+              <div class="field">
+                <span>빠른 선택</span>
+                <div class="archive-quick">
+                  <button type="button" class="strip-button" data-years="1">최근 1년</button>
+                  <button type="button" class="strip-button" data-years="2">최근 2년</button>
+                  <button type="button" class="strip-button" data-years="3">최근 3년</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="archive-row">
+              <label class="field">
+                <span>최소 연주 횟수</span>
+                <input id="f-min" type="number" min="0" max="9999" inputmode="numeric" />
+              </label>
+              <label class="field">
+                <span>최대 연주 횟수</span>
+                <input id="f-max" type="number" min="0" max="9999" inputmode="numeric" />
+              </label>
+            </div>
+
+            <fieldset class="archive-group">
+              <legend>찾는 방식</legend>
+              <label class="archive-radio"><input type="radio" name="mode" value="include" checked /> 위 조건으로 연주한 적 있는 악보 <em>조건에 맞는 기록만 세어 횟수 판단</em></label>
+              <label class="archive-radio"><input type="radio" name="mode" value="exclude" /> 위 조건으로는 연주하지 않은 악보 <em>횟수는 전체 기간 실제 연주 횟수로 판단</em></label>
+            </fieldset>
+
+            <fieldset class="archive-group">
+              <legend>연주 상태</legend>
+              <label class="archive-radio"><input type="radio" name="played" value="played" checked /> 실제 연주 완료로 체크된 기록만</label>
+              <label class="archive-radio"><input type="radio" name="played" value="any" /> 예정·미정 기록도 포함</label>
+            </fieldset>
+
+            <p id="search-message" class="notice" role="status" hidden></p>
+            <div class="form-actions">
+              <button id="search-button" class="primary-button" type="submit">검색</button>
+              <button id="reset-button" class="text-button" type="button">조건 초기화</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="result-panel" class="panel-card" aria-labelledby="result-title" hidden>
+          <h2 id="result-title">검색 결과</h2>
+          <p id="result-summary" class="history-summary"></p>
+          <ul id="result-list" class="archive-results"></ul>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script type="module" src="archive.js"></script>
+</body>
+</html>

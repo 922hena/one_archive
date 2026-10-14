@@ -30,6 +30,10 @@ const scoreList = $("#score-list");
 const editorPanel = $("#editor-panel");
 const scoreForm = $("#score-form");
 const titleInput = $("#score-title");
+const composerInput = $("#score-composer");
+const composerForm = $("#composer-form");
+const composerEdit = $("#composer-edit");
+const composerSave = $("#composer-save");
 const cameraButton = $("#camera-button");
 const libraryButton = $("#library-button");
 const cameraInput = $("#camera-input");
@@ -291,6 +295,7 @@ function updateControls() {
   cameraButton.disabled = locked || processing;
   libraryButton.disabled = locked || processing;
   titleInput.disabled = locked;
+  composerInput.disabled = locked;
   saveButton.disabled = busy;
   cameraButton.textContent = pages.length > 0 ? "한 장 더 촬영" : "카메라로 촬영";
   saveButton.textContent = draftScoreId ? "다시 시도" : "악보 저장";
@@ -361,6 +366,7 @@ function resetEditor() {
   saving = false;
   processing = false;
   titleInput.value = "";
+  composerInput.value = "";
   setNotice(prepareMessage, "", "info");
   setNotice(editorMessage, "", "info");
   progress.hidden = true;
@@ -567,7 +573,11 @@ async function saveScore(event) {
 
   try {
     if (!draftScoreId) {
-      const { data, error } = await supabase.from("scores").insert({ title }).select("id").single();
+      const { data, error } = await supabase
+        .from("scores")
+        .insert({ title, composer: composerInput.value.trim() || null })
+        .select("id")
+        .single();
       if (error || !data) {
         setNotice(editorMessage, "악보를 만들지 못했습니다. 연결을 확인하고 다시 시도해 주세요.", "info");
         return;
@@ -693,7 +703,7 @@ function createScoreCard(score, thumbUrl) {
   const uploading = score.status !== "ready";
   meta.textContent = uploading
     ? "업로드 미완료"
-    : `${score.page_count > 0 ? `${score.page_count}페이지` : "사진 없음"} · ${formatDate(score.created_at)}`;
+    : `${score.composer ? `${score.composer} · ` : ""}${score.page_count > 0 ? `${score.page_count}페이지` : "사진 없음"} · ${formatDate(score.created_at)}`;
   info.append(title, meta);
 
   card.append(thumb, info);
@@ -746,7 +756,7 @@ async function loadScores() {
 
   const { data, error } = await supabase
     .from("scores")
-    .select("id, title, status, page_count, created_at")
+    .select("id, title, composer, status, page_count, created_at")
     .order("created_at", { ascending: false });
 
   if (token !== listToken || activeUserId !== userId) return;
@@ -803,6 +813,7 @@ async function openViewer(score) {
   viewerPages.replaceChildren();
   deleteButton.disabled = false;
   viewerHistory.replaceChildren();
+  composerEdit.value = score.composer ?? "";
   showPanel("viewer");
   loadScoreHistory(supabase, score.id)
     .then((rows) => {
@@ -887,6 +898,24 @@ async function openViewer(score) {
   });
   viewerPages.replaceChildren(...items);
 }
+
+async function saveComposer(event) {
+  event.preventDefault();
+  if (!openScore || !supabase) return;
+  const target = openScore;
+  const value = composerEdit.value.trim();
+  composerSave.disabled = true;
+  const { error } = await supabase.from("scores").update({ composer: value || null }).eq("id", target.id);
+  composerSave.disabled = false;
+  if (error) {
+    setNotice(viewerMessage, "작곡가를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.", "info");
+    return;
+  }
+  target.composer = value || null;
+  setNotice(viewerMessage, "작곡가를 저장했습니다.", "success");
+}
+
+composerForm.addEventListener("submit", saveComposer);
 
 function closeViewer() {
   viewToken += 1;

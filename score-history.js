@@ -1,6 +1,6 @@
 import { liturgicalName } from "./liturgy.js";
 
-const ROLE_LABELS = {
+export const ROLE_LABELS = {
   entrance: "입당성가", kyrie: "자비송", gloria: "대영광송", psalm: "화답송",
   gospel_acclamation: "복음환호송", prayer_response: "보편지향기도응답",
   offertory_1: "봉헌성가 1", offertory_2: "봉헌성가 2", sanctus: "거룩하시도다",
@@ -16,12 +16,12 @@ function todayIso() {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-function dateText(iso) {
+export function dateText(iso) {
   const [y, m, d] = iso.split("-").map(Number);
   return `${y}년 ${m}월 ${d}일`;
 }
 
-function massName(time) {
+export function massName(time) {
   const [h] = String(time).split(":").map(Number);
   if (!Number.isFinite(h)) return "미사";
   if (h === 0 || h === 24) return "자정 미사";

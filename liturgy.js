@@ -51,7 +51,7 @@ export function liturgicalName(isoDate) {
   if (date.getUTCDay() !== 0) return "";
 
   if (diff > -42 && diff < -7) return `사순 제 ${Math.round((diff + 42) / 7) + 1}주일`;
-  if (diff === -42) return "사순 제1주일";
+  if (diff === -42) return "사순 제 1주일";
   if (diff > 0 && diff < 42) return `부활 제 ${diff / 7 + 1}주일`;
 
   const christmas = utc(y, 12, 25);
