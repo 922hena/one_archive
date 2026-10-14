@@ -169,6 +169,14 @@ function renderSchedules(rows) {
       item.append(choir);
     }
 
+    if (typeof row.id === "string") {
+      const scoresLink = document.createElement("a");
+      scoresLink.className = "text-button";
+      scoresLink.href = `mass.html?id=${encodeURIComponent(row.id)}`;
+      scoresLink.textContent = "악보";
+      item.append(scoresLink);
+    }
+
     scheduleList.append(item);
   });
 }
