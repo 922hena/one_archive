@@ -34,6 +34,26 @@ const composerInput = $("#score-composer");
 const composerForm = $("#composer-form");
 const composerEdit = $("#composer-edit");
 const composerSave = $("#composer-save");
+import { createComposerPicker, composerLabel } from "./composer-picker.js";
+const COMPOSER_INFO = "composer_info:composers(display_name, birth_year, death_year, country)";
+function composerText(score) {
+  if (score.composer_info) return composerLabel(score.composer_info);
+  return score.composer ?? "";
+}
+function metaText(score) {
+  const composer = composerText(score);
+  return `${composer ? `${composer} · ` : ""}${score.page_count}페이지 · ${formatDate(score.created_at)}`;
+}
+let newComposerPicker = null;
+let editComposerPicker = null;
+function newPicker() {
+  newComposerPicker ??= createComposerPicker({ supabase, input: composerInput });
+  return newComposerPicker;
+}
+function editPicker() {
+  editComposerPicker ??= createComposerPicker({ supabase, input: composerEdit });
+  return editComposerPicker;
+}
 const cameraButton = $("#camera-button");
 const libraryButton = $("#library-button");
 const cameraInput = $("#camera-input");
@@ -367,6 +387,7 @@ function resetEditor() {
   processing = false;
   titleInput.value = "";
   composerInput.value = "";
+  newPicker().clear();
   setNotice(prepareMessage, "", "info");
   setNotice(editorMessage, "", "info");
   progress.hidden = true;
@@ -564,6 +585,10 @@ async function saveScore(event) {
       setNotice(editorMessage, "제목은 200자 안으로 입력해 주세요.", "info");
       return;
     }
+    if (newPicker().value().unresolved) {
+      setNotice(editorMessage, "작곡가는 목록에서 선택하거나 '새로 추가'해 주세요. 비워 두면 작곡가 없이 저장됩니다.", "info");
+      return;
+    }
   }
 
   saving = true;
@@ -575,7 +600,7 @@ async function saveScore(event) {
     if (!draftScoreId) {
       const { data, error } = await supabase
         .from("scores")
-        .insert({ title, composer: composerInput.value.trim() || null })
+        .insert({ title, composer_id: newPicker().value().id })
         .select("id")
         .single();
       if (error || !data) {
@@ -703,7 +728,7 @@ function createScoreCard(score, thumbUrl) {
   const uploading = score.status !== "ready";
   meta.textContent = uploading
     ? "업로드 미완료"
-    : `${score.composer ? `${score.composer} · ` : ""}${score.page_count > 0 ? `${score.page_count}페이지` : "사진 없음"} · ${formatDate(score.created_at)}`;
+    : `${composerText(score) ? `${composerText(score)} · ` : ""}${score.page_count > 0 ? `${score.page_count}페이지` : "사진 없음"} · ${formatDate(score.created_at)}`;
   info.append(title, meta);
 
   card.append(thumb, info);
@@ -756,7 +781,7 @@ async function loadScores() {
 
   const { data, error } = await supabase
     .from("scores")
-    .select("id, title, composer, status, page_count, created_at")
+    .select(`id, title, composer, composer_id, ${COMPOSER_INFO}, status, page_count, created_at`)
     .order("created_at", { ascending: false });
 
   if (token !== listToken || activeUserId !== userId) return;
@@ -808,12 +833,13 @@ async function openViewer(score) {
   openScore = score;
   const token = ++viewToken;
   viewerTitle.textContent = score.title;
-  viewerMeta.textContent = `${score.page_count}페이지 · ${formatDate(score.created_at)}`;
+  viewerMeta.textContent = metaText(score);
   setNotice(viewerMessage, "", "info");
   viewerPages.replaceChildren();
   deleteButton.disabled = false;
   viewerHistory.replaceChildren();
-  composerEdit.value = score.composer ?? "";
+  editPicker().set(score.composer_id ? { id: score.composer_id, display_name: score.composer ?? "" } : null);
+  if (!score.composer_id) composerEdit.value = score.composer ?? "";
   showPanel("viewer");
   loadScoreHistory(supabase, score.id)
     .then((rows) => {
@@ -903,15 +929,28 @@ async function saveComposer(event) {
   event.preventDefault();
   if (!openScore || !supabase) return;
   const target = openScore;
-  const value = composerEdit.value.trim();
+  const picked = editPicker().value();
+  if (picked.unresolved) {
+    setNotice(viewerMessage, "작곡가는 목록에서 선택하거나 '새로 추가'해 주세요. 비우면 작곡가가 지워집니다.", "info");
+    return;
+  }
   composerSave.disabled = true;
-  const { error } = await supabase.from("scores").update({ composer: value || null }).eq("id", target.id);
+  const { data, error } = await supabase
+    .from("scores")
+    .update(picked.id ? { composer_id: picked.id } : { composer_id: null, composer: null })
+    .eq("id", target.id)
+    .select(`composer, composer_id, ${COMPOSER_INFO}`)
+    .single();
   composerSave.disabled = false;
-  if (error) {
+  if (error || !data) {
     setNotice(viewerMessage, "작곡가를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.", "info");
     return;
   }
-  target.composer = value || null;
+  target.composer = data.composer;
+  target.composer_id = data.composer_id;
+  target.composer_info = data.composer_info;
+  viewerMeta.textContent = metaText(target);
+  loadScores();
   setNotice(viewerMessage, "작곡가를 저장했습니다.", "success");
 }
 

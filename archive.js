@@ -1,5 +1,6 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 import { ROLE_LABELS, dateText, massName } from "./score-history.js";
+import { composerLabel } from "./composer-picker.js";
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -268,6 +269,19 @@ async function runSearch(event) {
       return;
     }
     const rows = data ?? [];
+    if (rows.length) {
+      const { data: infos } = await supabase
+        .from("scores")
+        .select("id, composer_info:composers(display_name, birth_year, death_year, country)")
+        .in("id", rows.map((row) => row.score_id));
+      if (token !== searchToken) return;
+      const byId = new Map((infos ?? []).map((entry) => [entry.id, entry.composer_info]));
+      rows.forEach((row) => {
+        const info = byId.get(row.score_id);
+        const composer = info ? composerLabel(info) : "";
+        if (composer) row.composer = composer;
+      });
+    }
     const exclude = params.p_period_mode === "exclude";
     resultPanel.hidden = false;
     resultSummary.textContent = rows.length === 0

@@ -73,10 +73,10 @@
               <input id="score-title" name="title" type="text" maxlength="200" autocomplete="off" />
             </label>
 
-            <label class="field">
-              <span>작곡가 <em>선택</em></span>
-              <input id="score-composer" name="composer" type="text" maxlength="100" autocomplete="off" />
-            </label>
+            <div class="field">
+              <span>작곡가 <em>선택 · 입력하면 목록에서 고릅니다 (예: J, Bach, 바흐)</em></span>
+              <div><input id="score-composer" name="composer" type="text" maxlength="120" autocomplete="off" /></div>
+            </div>
 
             <div class="field">
               <span>페이지 추가 <em>선택</em></span>
@@ -111,7 +111,7 @@
           <p id="viewer-meta" class="viewer-meta"></p>
           <form id="composer-form" class="composer-form" novalidate>
             <label for="composer-edit">작곡가</label>
-            <input id="composer-edit" type="text" maxlength="100" autocomplete="off" placeholder="작곡가 입력" />
+            <div class="composer-field"><input id="composer-edit" type="text" maxlength="120" autocomplete="off" placeholder="작곡가 검색 (예: J, Bach, 바흐)" /></div>
             <button id="composer-save" class="strip-button" type="submit">저장</button>
           </form>
           <p id="viewer-message" class="notice" role="status" hidden></p>

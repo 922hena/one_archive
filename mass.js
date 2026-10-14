@@ -179,7 +179,19 @@ function showPanel(name) {
 
 function embeddedScore(row) {
   const score = Array.isArray(row.scores) ? row.scores[0] : row.scores;
-  return { title: score?.title ?? "(제목 없음)", pageCount: score?.page_count ?? 0 };
+  return { title: score?.title ?? "(제목 없음)", pageCount: score?.page_count ?? 0, composer: composerText(score) };
+}
+
+/* 작곡가는 항상 생몰 연도·국가와 함께 표시합니다. 예: J. S. Bach (1685–1750, Germany) */
+const COMPOSER_INFO = "composer_info:composers(display_name, birth_year, death_year, country)";
+function composerText(score) {
+  const info = Array.isArray(score?.composer_info) ? score.composer_info[0] : score?.composer_info;
+  if (info?.display_name) {
+    const years = info.birth_year || info.death_year ? `${info.birth_year ?? "?"}–${info.death_year ?? "?"}` : "";
+    const life = [years, info.country].filter(Boolean).join(", ");
+    return life ? `${info.display_name} (${life})` : info.display_name;
+  }
+  return score?.composer ?? "";
 }
 
 function makeButton(label, className, onClick, disabled = false, ariaLabel = label) {
@@ -242,7 +254,7 @@ async function loadMass() {
 async function loadLinks(token = loadToken) {
   const { data, error } = await supabase
     .from("mass_score_links")
-    .select("id, score_id, music_role, play_order, memo, played, created_at, scores(title, page_count)")
+    .select("id, score_id, music_role, play_order, memo, played, created_at, scores(title, page_count, composer, " + COMPOSER_INFO + ")")
     .eq("mass_id", massId)
     .order("play_order", { ascending: true })
     .order("created_at", { ascending: true });
@@ -323,7 +335,7 @@ function renderLinks() {
 
 function buildLinkCard(link) {
   {
-    const { title, pageCount } = embeddedScore(link);
+    const { title, pageCount, composer } = embeddedScore(link);
     const item = document.createElement("li");
     item.className = "link-item";
     if (link.played) item.classList.add("is-played");
@@ -340,6 +352,12 @@ function buildLinkCard(link) {
     nameButton.setAttribute("aria-label", `${title} 넘겨 보기`);
     nameButton.addEventListener("click", () => openReader(link));
     name.append(nameButton);
+    if (composer) {
+      const composerLine = document.createElement("span");
+      composerLine.className = "link-composer";
+      composerLine.textContent = composer;
+      name.append(composerLine);
+    }
     const count = document.createElement("span");
     count.className = "link-count";
     count.textContent = pageCount > 0 ? `${pageCount}개` : "";
@@ -798,6 +816,13 @@ function renderPicker() {
     if (chosenScore?.id === score.id) button.classList.add("is-chosen");
     const label = document.createElement("span");
     label.textContent = score.title;
+    const pickerComposer = composerText(score);
+    if (pickerComposer) {
+      const sub = document.createElement("small");
+      sub.className = "picker-composer";
+      sub.textContent = pickerComposer;
+      label.append(document.createElement("br"), sub);
+    }
     const meta = document.createElement("span");
     meta.className = "picker-meta";
     meta.textContent = score.page_count > 0 ? `${score.page_count}개` : "";
@@ -810,7 +835,7 @@ function renderPicker() {
 
 function chooseScore(score) {
   chosenScore = score;
-  pickerSelected.textContent = `선택한 악보: ${score.title}`;
+  pickerSelected.textContent = `선택한 악보: ${score.title}${composerText(score) ? ` — ${composerText(score)}` : ""}`;
   pickerForm.hidden = false;
   renderPicker();
   pickerForm.scrollIntoView({ block: "nearest", behavior: "smooth" });
@@ -832,7 +857,7 @@ async function openPicker(presetRoles = []) {
 
   const { data, error } = await supabase
     .from("scores")
-    .select("id, title, page_count")
+    .select("id, title, page_count, composer, " + COMPOSER_INFO)
     .eq("status", "ready")
     .order("created_at", { ascending: false });
   if (error) {
@@ -960,8 +985,8 @@ async function renderReader() {
   const token = ++readerToken;
   const link = readerItems[readerLink];
   if (!link) return;
-  const { title } = embeddedScore(link);
-  readerTitle.textContent = title;
+  const { title, composer: readerComposer } = embeddedScore(link);
+  readerTitle.textContent = readerComposer ? `${title} — ${readerComposer}` : title;
   readerSub.textContent = `${roleBadgeText(link.music_role)} · 악보 ${readerLink + 1}/${readerItems.length}`;
   readerCounter.textContent = "";
   readerPrev.disabled = true;
