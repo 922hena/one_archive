@@ -1,0 +1,30 @@
+# 환경변수 / 비밀정보 (서버 코드를 추가하면 여기에 값을 둡니다)
+.env
+.env.*
+!.env.example
+
+# 키 파일 (EC2 접속 키 등)
+*.pem
+*.key
+*.p12
+*.ppk
+
+# 의존성 / 빌드 결과
+node_modules/
+dist/
+build/
+.vercel/
+
+# 로그
+*.log
+npm-debug.log*
+
+# OS / 에디터
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 임시 파일
+*.tmp
+*.bak
