@@ -1,0 +1,15 @@
+---
+description: Protect existing ONE ARCHIVE authentication
+alwaysApply: true
+---
+
+# Authentication Protection
+
+- Preserve the existing signup and login functionality.
+- Do not delete or reset Supabase Auth users.
+- Do not modify authentication configuration without approval.
+- Preserve existing user IDs and profile relationships.
+- Do not delete database tables or user data.
+- Before changing authentication-related code, explain the impact.
+- Never expose API secrets or user credentials.
+- Request explicit approval before destructive operations.

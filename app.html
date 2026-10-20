@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#ffffff" />
+  <title>ONE ARCHIVE — Mass·Score</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body class="app-page">
+  <a class="skip-link" href="#view" data-i18n="app.skip">본문으로 바로가기</a>
+
+  <header class="app-header">
+    <div class="app-bar">
+      <a class="app-wordmark" href="index.html" data-i18n-label="app.home">ONE ARCHIVE</a>
+      <nav class="app-nav" data-i18n-label="app.nav">
+        <a href="#/date" data-nav="mass" data-i18n="nav.mass">Mass</a>
+        <a href="#/library" data-nav="library" data-i18n="nav.library">score library</a>
+        <a href="#/layouts" data-nav="layouts" data-i18n="nav.layouts">layouts</a>
+      </nav>
+      <div class="app-account">
+        <span id="account-email" class="meta"></span>
+        <a href="schedule.html" class="link-button" data-i18n="nav.account">계정</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="view" class="app-main" tabindex="-1">
+    <p class="meta" data-i18n="common.loading">불러오는 중…</p>
+  </main>
+
+  <p id="app-status" class="app-status" role="status" hidden></p>
+
+  <script src="config.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
