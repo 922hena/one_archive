@@ -1,13 +1,8 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
-const ROLE_LABELS = {
-  accompanist: "미사반주",
-  conductor: "미사지휘"
-};
-
 const setupMessage = document.querySelector("#setup-message");
 const authPanel = document.querySelector("#auth-panel");
-const schedulePanel = document.querySelector("#schedule-panel");
+const sessionPanel = document.querySelector("#session-panel");
 const authForm = document.querySelector("#auth-form");
 const authMessage = document.querySelector("#auth-message");
 const emailInput = document.querySelector("#email");
@@ -16,27 +11,14 @@ const loginButton = document.querySelector("#login-button");
 const signupButton = document.querySelector("#signup-button");
 const logoutButton = document.querySelector("#logout-button");
 const accountLine = document.querySelector("#account-line");
-const scheduleForm = document.querySelector("#schedule-form");
-const saveButton = document.querySelector("#save-button");
-const saveMessage = document.querySelector("#save-message");
-const scheduleList = document.querySelector("#schedule-list");
-const dateInput = document.querySelector("#service-date");
-const hourInput = document.querySelector("#service-hour");
-const placeInput = document.querySelector("#place");
-const roleInput = document.querySelector("#role");
-const choirInput = document.querySelector("#choir-name");
-const templateInput = document.querySelector("#template-select");
-let templates = [];
+const sessionMessage = document.querySelector("#session-message");
 
 const arrivedFromEmailLink = /(?:type=(?:signup|email|magiclink)|[?&#]code=)/.test(
   `${window.location.hash}${window.location.search}`
 );
 
 let supabase = null;
-let activeUserId = null;
-let loadToken = 0;
 let authBusy = false;
-let saveBusy = false;
 let emailLinkNoted = false;
 
 function setNotice(element, text, tone) {
@@ -83,174 +65,25 @@ function lockAuthForm() {
 }
 
 function showSignedOut() {
-  activeUserId = null;
-  loadToken += 1;
   passwordInput.value = "";
   accountLine.textContent = "";
   accountLine.hidden = true;
   logoutButton.hidden = true;
   authPanel.hidden = false;
-  schedulePanel.hidden = true;
-  saveBusy = false;
-  saveButton.disabled = false;
-  saveButton.textContent = "일정 저장";
-  setNotice(saveMessage, "", "info");
-  scheduleList.replaceChildren();
-  templates = [];
-  renderTemplateOptions();
+  sessionPanel.hidden = true;
+  setNotice(sessionMessage, "", "info");
 }
 
 function showSignedIn(user) {
   authPanel.hidden = true;
-  schedulePanel.hidden = false;
+  sessionPanel.hidden = false;
   accountLine.hidden = false;
   logoutButton.hidden = false;
-  accountLine.textContent = user.email ? `${user.email} 님의 일정` : "로그인한 계정의 일정";
+  accountLine.textContent = user.email ? `${user.email} 님으로 로그인했습니다.` : "로그인했습니다.";
   if (arrivedFromEmailLink && !emailLinkNoted) {
     emailLinkNoted = true;
-    setNotice(saveMessage, "이메일 확인이 완료되어 로그인되었습니다.", "success");
+    setNotice(sessionMessage, "이메일 확인이 완료되어 로그인되었습니다.", "success");
   }
-}
-
-function appendTimeOptions(select, min, max) {
-  for (let value = min; value <= max; value += 1) {
-    const option = document.createElement("option");
-    const label = String(value).padStart(2, "0");
-    option.value = label;
-    option.textContent = label;
-    select.append(option);
-  }
-}
-
-appendTimeOptions(hourInput, 6, 24);
-
-function renderTemplateOptions() {
-  const keep = templateInput.value;
-  templateInput.replaceChildren();
-  const none = document.createElement("option");
-  none.value = "";
-  none.textContent = "선택 안 함";
-  templateInput.append(none);
-  templates.forEach((template) => {
-    const option = document.createElement("option");
-    option.value = template.id;
-    option.textContent = `미사${template.slot_no}. ${template.name}`;
-    templateInput.append(option);
-  });
-  if (templates.some((template) => template.id === keep)) templateInput.value = keep;
-}
-
-async function loadTemplateChoices() {
-  const userId = activeUserId;
-  if (!supabase || !userId) return;
-  const { data, error } = await supabase
-    .from("mass_templates")
-    .select("id, slot_no, name, roles")
-    .order("slot_no", { ascending: true });
-  if (activeUserId !== userId) return;
-  templates = error ? [] : (data ?? []).filter((row) => Array.isArray(row.roles) && row.roles.length > 0);
-  renderTemplateOptions();
-}
-
-function formatDate(value) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? "");
-  if (!match) return "";
-  return `${match[1]}년 ${Number(match[2])}월 ${Number(match[3])}일`;
-}
-
-function formatTime(value) {
-  const match = /^(\d{2}):(\d{2})/.exec(value ?? "");
-  if (!match) return "";
-  return `${match[1]}:${match[2]}`;
-}
-
-function renderSchedules(rows) {
-  scheduleList.replaceChildren();
-  if (rows.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "empty-copy";
-    empty.textContent = "저장된 일정이 없습니다.";
-    scheduleList.append(empty);
-    return;
-  }
-
-  rows.forEach((row) => {
-    const item = document.createElement("article");
-    item.className = "schedule-item";
-
-    const when = document.createElement("p");
-    when.className = "schedule-when";
-    when.textContent = [formatDate(row.service_date), formatTime(row.service_time)].filter(Boolean).join(" · ");
-
-    const place = document.createElement("p");
-    place.className = "schedule-place";
-    place.textContent = typeof row.place === "string" ? row.place : "";
-
-    const role = document.createElement("p");
-    role.className = "schedule-role";
-    role.textContent = ROLE_LABELS[row.role] ?? "";
-
-    item.append(when, place, role);
-
-    if (typeof row.choir_name === "string" && row.choir_name.trim()) {
-      const choir = document.createElement("p");
-      choir.className = "schedule-choir";
-      choir.textContent = row.choir_name;
-      item.append(choir);
-    }
-
-    if (typeof row.template_name === "string" && row.template_name.trim()) {
-      const templateLine = document.createElement("p");
-      templateLine.className = "schedule-choir";
-      templateLine.textContent = `미사곡 · ${row.template_name}`;
-      item.append(templateLine);
-    }
-
-    if (typeof row.id === "string") {
-      const scoresLink = document.createElement("a");
-      scoresLink.className = "text-button";
-      scoresLink.href = `mass.html?id=${encodeURIComponent(row.id)}`;
-      scoresLink.textContent = "악보";
-      item.append(scoresLink);
-    }
-
-    scheduleList.append(item);
-  });
-}
-
-function sortSchedules(rows) {
-  return [...rows].sort((a, b) => {
-    const byDate = String(a.service_date).localeCompare(String(b.service_date));
-    if (byDate !== 0) return byDate;
-    return String(a.service_time).localeCompare(String(b.service_time));
-  });
-}
-
-async function loadSchedules() {
-  const token = ++loadToken;
-  const userId = activeUserId;
-  if (!supabase || !userId) return;
-
-  const pending = document.createElement("p");
-  pending.className = "empty-copy";
-  pending.textContent = "일정을 불러오는 중입니다.";
-  scheduleList.replaceChildren(pending);
-
-  const { data, error } = await supabase
-    .from("mass_schedules")
-    .select("id, service_date, service_time, place, role, choir_name, template_name")
-    .order("service_date", { ascending: true })
-    .order("service_time", { ascending: true });
-
-  if (token !== loadToken || activeUserId !== userId) return;
-
-  if (error) {
-    scheduleList.replaceChildren();
-    setNotice(saveMessage, "일정을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.", "info");
-    return;
-  }
-
-  renderSchedules(sortSchedules(data ?? []));
 }
 
 function koreanAuthError(error, action) {
@@ -329,76 +162,11 @@ async function signOut() {
   logoutButton.disabled = true;
   try {
     const { error } = await supabase.auth.signOut();
-    if (error) setNotice(saveMessage, "로그아웃하지 못했습니다. 다시 시도해 주세요.", "info");
+    if (error) setNotice(sessionMessage, "로그아웃하지 못했습니다. 다시 시도해 주세요.", "info");
   } catch {
-    setNotice(saveMessage, "로그아웃하지 못했습니다. 다시 시도해 주세요.", "info");
+    setNotice(sessionMessage, "로그아웃하지 못했습니다. 다시 시도해 주세요.", "info");
   } finally {
     logoutButton.disabled = false;
-  }
-}
-
-function schedulePayload() {
-  const place = placeInput.value.trim();
-  const choir = choirInput.value.trim();
-  const role = roleInput.value;
-  const serviceTime = `${hourInput.value}:00`;
-  if (!dateInput.value || !/^(?:0[6-9]|1\d|2[0-4]):00$/.test(serviceTime) || !place) {
-    return { error: "날짜, 시, 장소를 모두 입력해 주세요." };
-  }
-  if (!Object.hasOwn(ROLE_LABELS, role)) {
-    return { error: "역할은 미사반주 또는 미사지휘 중에서 선택해 주세요." };
-  }
-  if (place.length > 200 || choir.length > 200) {
-    return { error: "장소와 성가대 이름은 200자 안으로 입력해 주세요." };
-  }
-  const template = templates.find((item) => item.id === templateInput.value);
-  return {
-    value: {
-      service_date: dateInput.value,
-      service_time: serviceTime,
-      place,
-      role,
-      choir_name: choir || null,
-      template_name: template ? template.name : null,
-      template_roles: template ? template.roles : null
-    }
-  };
-}
-
-async function saveSchedule(event) {
-  event.preventDefault();
-  if (!supabase || !activeUserId || saveBusy) return;
-  if (!scheduleForm.reportValidity()) return;
-
-  const payload = schedulePayload();
-  if (payload.error) {
-    setNotice(saveMessage, payload.error, "info");
-    return;
-  }
-
-  saveBusy = true;
-  saveButton.disabled = true;
-  saveButton.textContent = "저장 중";
-  setNotice(saveMessage, "", "info");
-
-  try {
-    const { error } = await supabase.from("mass_schedules").insert(payload.value);
-    if (error) {
-      setNotice(saveMessage, "일정을 저장하지 못했습니다. 입력 내용을 확인한 뒤 다시 시도해 주세요.", "info");
-      return;
-    }
-    hourInput.value = "";
-    templateInput.value = "";
-    placeInput.value = "";
-    choirInput.value = "";
-    setNotice(saveMessage, "일정을 저장했습니다.", "success");
-    await loadSchedules();
-  } catch {
-    setNotice(saveMessage, "일정을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.", "info");
-  } finally {
-    saveBusy = false;
-    saveButton.disabled = false;
-    saveButton.textContent = "일정 저장";
   }
 }
 
@@ -435,18 +203,11 @@ function boot() {
       showSignedOut();
       return;
     }
-    const changedUser = activeUserId !== user.id;
     showSignedIn(user);
-    if (changedUser || event === "INITIAL_SESSION" || event === "SIGNED_IN") {
-      activeUserId = user.id;
-      loadSchedules();
-      loadTemplateChoices();
-    }
   });
 }
 
 authForm.addEventListener("submit", signIn);
 signupButton.addEventListener("click", signUp);
 logoutButton.addEventListener("click", signOut);
-scheduleForm.addEventListener("submit", saveSchedule);
 boot();
