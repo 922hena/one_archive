@@ -47,7 +47,7 @@ a { color: inherit; }
 .app-nav a[aria-current] { color: var(--ink); font-weight: 700; background: var(--soft); }
 .app-account { display: flex; align-items: center; gap: 12px; }
 
-.app-main { max-width: 1120px; margin: 0 auto; padding: 24px 20px 80px; outline: none; }
+.app-main { max-width: 1120px; margin: 0 auto; padding: 36px 20px 80px; outline: none; }
 .app-status {
   position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 60;
   margin: 0; padding: 10px 16px; border-radius: var(--radius); background: var(--ink); color: #fff;
@@ -95,7 +95,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .plain-list.compact .list-row { padding: 6px 2px; }
 
 /* calendar */
-.calendar-layout { display: grid; grid-template-columns: minmax(300px, 380px) 1fr; gap: 36px; align-items: start; }
+.calendar-layout { display: grid; grid-template-columns: minmax(300px, 380px) 1fr; gap: 36px; align-items: start; margin-top: 36px; }
 .cal-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; position: sticky; top: 72px; }
 .cal-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .cal-head h2 { flex: 1; margin: 0; font-size: 1.05rem; text-align: center; }
@@ -115,7 +115,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .color-dot.is-white { box-shadow: inset 0 0 0 1px #8f9290; }
 .cal-day.is-selected .color-dot { box-shadow: 0 0 0 1px #fff; }
 
-.date-title { margin: 0; font-size: 1.7rem; letter-spacing: -0.035em; font-weight: 700; }
+.date-title { margin: 0; font-size: 1.36rem; letter-spacing: -0.035em; font-weight: 700; }
 .liturgy-line { margin: 6px 0 0; font-size: 1.05rem; display: flex; align-items: center; gap: 8px; }
 .liturgy-line .color-dot { width: 10px; height: 10px; }
 .liturgy-line.is-unknown { color: var(--muted); }
@@ -293,7 +293,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   .app-bar { gap: 10px; padding: 0 12px; }
   .app-account .meta { display: none; }
   .app-nav a { padding: 6px 6px; }
-  .app-main { padding: 16px 12px 72px; }
+  .app-main { padding: 28px 12px 72px; }
+  .calendar-layout { margin-top: 28px; }
   .page-head { flex-direction: column; align-items: stretch; }
   .field-row { grid-template-columns: 1fr; gap: 0; }
   .role-row { grid-template-columns: 1fr; gap: 2px; padding-bottom: 8px; }
@@ -307,7 +308,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   .score-table td::before { content: attr(data-label); color: var(--muted); font-size: 0.8rem; text-align: left; }
   .score-table td.is-actions { justify-content: flex-start; flex-wrap: wrap; padding-top: 6px; }
   .score-table td.is-actions::before { content: none; }
-  .date-title { font-size: 1.4rem; }
+  .date-title { font-size: 1.12rem; }
   .page-row { flex-wrap: wrap; }
   .page-row .list-main { min-width: 120px; }
   .page-actions { width: 100%; justify-content: flex-end; }

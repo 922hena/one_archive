@@ -8,7 +8,7 @@ export default {
   nav: {
     mass: "Mass",
     library: "Score Library",
-    layouts: "Layouts",
+    layouts: "Layout",
     account: "계정"
   },
   common: {
@@ -194,7 +194,7 @@ export default {
     locked: "연결된 Score가 있어 끌 수 없습니다."
   },
   layouts: {
-    title: "Layouts",
+    title: "Layout",
     lead: "자주 쓰는 음악 항목 구성을 저장해 두고 + Add에서 불러옵니다. Layout을 고쳐도 이미 만든 Mass는 바뀌지 않습니다.",
     new: "New Layout",
     newTitle: "New Layout",
