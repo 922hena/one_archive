@@ -1,6 +1,5 @@
 import { t } from "../i18n.js";
-import { formatDateTime } from "../format.js";
-import { h, createDialog, confirmDialog, errorMessage, notify, setBusy } from "../ui.js";
+import { h, confirmDialog, errorMessage, notify, setBusy } from "../ui.js";
 
 export function roleLabel(role) {
   if (!role) return "";
@@ -8,19 +7,26 @@ export function roleLabel(role) {
   return role.name_ko ?? "";
 }
 
-// Checklist of the 18 fixed music items. selected: Map(role_id -> display_name|null)
+// Checklist of the 18 fixed music items (Latin names). selected: Map(role_id -> display_name|null)
+// Rows use the same column grid as the Mass music list: check | number | role | name.
 export function roleChecklist(roles, { selected = new Map(), locked = new Set(), labels = {} } = {}) {
   const text = { hint: "roles.hint", selectAll: "roles.selectAll", clearAll: "roles.clearAll", ...labels };
   const rows = roles.map((role) => {
     const isLocked = locked.has(role.id);
-    const checkbox = h("input", { type: "checkbox", checked: selected.has(role.id) || isLocked, disabled: isLocked });
+    const primary = role.name_la || roleLabel(role);
+    const checkbox = h("input", {
+      type: "checkbox",
+      checked: selected.has(role.id) || isLocked,
+      disabled: isLocked,
+      "aria-label": primary
+    });
     const nameInput = h("input", {
       type: "text",
       class: "role-rename",
       maxlength: 100,
-      placeholder: roleLabel(role),
+      placeholder: primary,
       value: selected.get(role.id) ?? "",
-      "aria-label": t("roles.renameLabel", { name: roleLabel(role) })
+      "aria-label": t("roles.renameLabel", { name: primary })
     });
     nameInput.disabled = !checkbox.checked;
     checkbox.addEventListener("change", () => {
@@ -29,11 +35,9 @@ export function roleChecklist(roles, { selected = new Map(), locked = new Set(),
     const element = h(
       "div",
       { class: checkbox.checked ? "role-row" : "role-row is-off" },
-      h("label", { class: "role-toggle" },
-        checkbox,
-        h("span", { class: "role-no", text: String(role.slot_no + 1).padStart(2, "0") }),
-        h("span", { class: "role-name" }, roleLabel(role), h("small", { text: role.name_la ?? "" }))
-      ),
+      h("label", { class: "role-check" }, checkbox),
+      h("span", { class: "role-no num", text: String(role.slot_no + 1).padStart(2, "0") }),
+      h("span", { class: "role-name" }, primary, role.name_la ? h("small", { text: roleLabel(role) }) : null),
       nameInput,
       isLocked ? h("small", { class: "role-lock", text: t("roles.locked") }) : null
     );
@@ -82,10 +86,21 @@ export function layoutSelection(layout) {
   return new Map((layout?.user_mass_layout_items ?? []).map((item) => [item.role_id, item.display_name ?? ""]));
 }
 
-function openLayoutForm(ctx, roles, layout) {
-  const { body, footer, close, setStatus } = createDialog(t(layout ? "layouts.editTitle" : "layouts.newTitle"), {
-    wide: true
-  });
+const NEW_LAYOUT = "new";
+// Remembered while the screen redraws after a save.
+let chosenLayoutId = null;
+
+export async function renderLayouts(container, ctx) {
+  const [roles, layouts] = await Promise.all([ctx.db.roles(), ctx.db.layouts()]);
+  let layout = layouts.find((item) => item.id === chosenLayoutId) ?? layouts[0] ?? null;
+  chosenLayoutId = layout?.id ?? NEW_LAYOUT;
+
+  const select = h(
+    "select",
+    { "aria-label": t("layouts.choose") },
+    layouts.map((item) => h("option", { value: item.id, selected: item.id === layout?.id }, item.name)),
+    h("option", { value: NEW_LAYOUT, selected: !layout }, t("layouts.newOption"))
+  );
   const nameInput = h("input", {
     type: "text",
     required: true,
@@ -93,16 +108,34 @@ function openLayoutForm(ctx, roles, layout) {
     value: layout?.name ?? "",
     placeholder: t("layouts.namePlaceholder")
   });
-  const checklist = roleChecklist(roles, {
-    selected: layout ? layoutSelection(layout) : new Map(roles.map((role) => [role.id, ""]))
+  const status = h("p", { class: "sheet-status", role: "status", hidden: true });
+  const partsBox = h("div", { class: "layout-parts-box" });
+  let checklist = null;
+
+  function showChecklist() {
+    checklist = roleChecklist(roles, {
+      selected: layout ? layoutSelection(layout) : new Map(roles.map((role) => [role.id, ""]))
+    });
+    partsBox.replaceChildren(checklist.element);
+  }
+
+  function setStatus(message) {
+    status.textContent = message ?? "";
+    status.hidden = !message;
+  }
+
+  select.addEventListener("change", () => {
+    layout = layouts.find((item) => item.id === select.value) ?? null;
+    chosenLayoutId = layout?.id ?? NEW_LAYOUT;
+    nameInput.value = layout?.name ?? "";
+    deleteButton.hidden = !layout;
+    setStatus("");
+    showChecklist();
   });
-  body.append(
-    h("label", { class: "field" }, h("span", { text: t("layouts.name") }), nameInput),
-    h("p", { class: "field-label", text: t("layouts.items") }),
-    checklist.element
-  );
-  const saveButton = h("button", { type: "button", class: "solid-button" }, t("common.save"));
-  footer.append(h("button", { type: "button", class: "ghost-button", onclick: close }, t("common.cancel")), saveButton);
+
+  const saveButton = h("button", { type: "button", class: "solid-button" }, t("layouts.save"));
+  const deleteButton = h("button", { type: "button", class: "ghost-button is-danger", hidden: !layout }, t("layouts.delete"));
+
   saveButton.addEventListener("click", async () => {
     const name = nameInput.value.trim();
     if (!name) {
@@ -110,84 +143,54 @@ function openLayoutForm(ctx, roles, layout) {
       nameInput.focus();
       return;
     }
-    setBusy([saveButton], true);
+    setBusy([saveButton, deleteButton], true);
     setStatus("");
     try {
       if (layout) await ctx.db.updateLayout(layout, name, checklist.read());
-      else await ctx.db.createLayout(name, checklist.read());
-      close();
+      else chosenLayoutId = await ctx.db.createLayout(name, checklist.read());
       notify(t("layouts.saved"), "success");
       ctx.refresh();
     } catch (error) {
       setStatus(errorMessage(error, "layouts.saveFailed"));
-    } finally {
-      setBusy([saveButton], false);
+      setBusy([saveButton, deleteButton], false);
     }
   });
-  nameInput.focus();
-}
 
-export async function renderLayouts(container, ctx) {
-  const [roles, layouts] = await Promise.all([ctx.db.roles(), ctx.db.layouts()]);
-  const roleById = new Map(roles.map((role) => [role.id, role]));
+  deleteButton.addEventListener("click", async () => {
+    if (!layout) return;
+    const ok = await confirmDialog(t("layouts.deleteConfirm", { name: layout.name }), {
+      confirmLabel: t("common.delete"),
+      danger: true
+    });
+    if (!ok) return;
+    try {
+      await ctx.db.deleteLayout(layout.id);
+      chosenLayoutId = null;
+      notify(t("layouts.deleted"), "success");
+      ctx.refresh();
+    } catch (error) {
+      notify(errorMessage(error, "layouts.deleteFailed"), "error");
+    }
+  });
 
-  const list = layouts.length
-    ? h(
-        "ul",
-        { class: "plain-list" },
-        layouts.map((layout) => {
-          const items = [...(layout.user_mass_layout_items ?? [])].sort(
-            (a, b) => (roleById.get(a.role_id)?.slot_no ?? 0) - (roleById.get(b.role_id)?.slot_no ?? 0)
-          );
-          const names = items.map((item) => item.display_name || roleLabel(roleById.get(item.role_id))).filter(Boolean);
-          const updatedAt = formatDateTime(layout.updated_at);
-          return h(
-            "li",
-            { class: "list-row" },
-            h("div", { class: "list-main" },
-              h("strong", { text: layout.name }),
-              h("span", { class: "meta", text: t("layouts.itemCount", { count: items.length }) }),
-              h("p", { class: "meta clamp", text: names.join(" · ") }),
-              updatedAt ? h("span", { class: "meta", text: t("layouts.updatedAt", { at: updatedAt }) }) : null
-            ),
-            h("div", { class: "row-actions" },
-              h("button", { type: "button", class: "ghost-button", onclick: () => openLayoutForm(ctx, roles, layout) }, t("common.edit")),
-              h(
-                "button",
-                {
-                  type: "button",
-                  class: "ghost-button is-danger",
-                  onclick: async () => {
-                    const ok = await confirmDialog(t("layouts.deleteConfirm", { name: layout.name }), {
-                      confirmLabel: t("common.delete"),
-                      danger: true
-                    });
-                    if (!ok) return;
-                    try {
-                      await ctx.db.deleteLayout(layout.id);
-                      notify(t("layouts.deleted"), "success");
-                      ctx.refresh();
-                    } catch (error) {
-                      notify(errorMessage(error, "layouts.deleteFailed"), "error");
-                    }
-                  }
-                },
-                t("common.delete")
-              )
-            )
-          );
-        })
-      )
-    : h("p", { class: "empty", text: t("layouts.empty") });
+  showChecklist();
 
   container.append(
     h("section", { class: "page-head" },
       h("div", {},
-        h("h1", { text: t("layouts.title") }),
-        h("p", { class: "lead", text: t("layouts.lead") })
-      ),
-      h("button", { type: "button", class: "solid-button", onclick: () => openLayoutForm(ctx, roles, null) }, t("layouts.new"))
+        h("p", { class: "meta", text: t("layouts.title") }),
+        h("h1", { text: t("layouts.heading") })
+      )
     ),
-    list
+    h("section", { class: "layout-card" },
+      h("div", { class: "layout-fields" },
+        h("label", { class: "field" }, h("span", { text: t("layouts.choose") }), select),
+        h("label", { class: "field" }, h("span", { text: t("layouts.name") }), nameInput)
+      ),
+      h("p", { class: "hint", text: t("layouts.lead") }),
+      h("div", { class: "layout-parts" }, h("h2", { text: t("layouts.partes") }), partsBox),
+      status,
+      h("div", { class: "layout-actions" }, saveButton, deleteButton)
+    )
   );
 }

@@ -11,7 +11,7 @@ import {
   weekdayIndex,
   weekdayName
 } from "../format.js";
-import { h, createDialog, confirmDialog, errorMessage, notify, setBusy, colorDot, displayScoreTitle } from "../ui.js";
+import { h, actionMenu, createDialog, confirmDialog, errorMessage, notify, setBusy, colorDot, displayScoreTitle } from "../ui.js";
 import { roleChecklist, layoutSelection, roleLabel } from "./layouts.js";
 import {
   deletionGroups,
@@ -467,38 +467,19 @@ async function openLinkPicker(ctx, slot, itemName) {
   );
 }
 
-function entryRow(ctx, entry, itemName) {
+async function unlinkEntry(ctx, entry, itemName) {
   const score = entry.owned_scores;
-  return h("li", { class: "entry-row" },
-    h("div", { class: "list-main" },
-      h("strong", { text: displayScoreTitle(score) }),
-      score?.composer_name ? h("span", { class: "meta", text: score.composer_name }) : null
-    ),
-    h("div", { class: "row-actions" },
-      h("button", { type: "button", class: "link-button", onclick: () => openViewer(ctx, score) }, t("common.open")),
-      h(
-        "button",
-        {
-          type: "button",
-          class: "link-button",
-          onclick: async () => {
-            const ok = await confirmDialog(t("mass.unlinkConfirm", { title: displayScoreTitle(score), item: itemName }), {
-              confirmLabel: t("mass.unlink")
-            });
-            if (!ok) return;
-            try {
-              await ctx.db.unlink(entry.id);
-              notify(t("mass.unlinked"), "success");
-              ctx.refresh();
-            } catch (error) {
-              notify(errorMessage(error, "mass.unlinkFailed"), "error");
-            }
-          }
-        },
-        t("mass.unlink")
-      )
-    )
-  );
+  const ok = await confirmDialog(t("mass.unlinkConfirm", { title: displayScoreTitle(score), item: itemName }), {
+    confirmLabel: t("mass.unlink")
+  });
+  if (!ok) return;
+  try {
+    await ctx.db.unlink(entry.id);
+    notify(t("mass.unlinked"), "success");
+    ctx.refresh();
+  } catch (error) {
+    notify(errorMessage(error, "mass.unlinkFailed"), "error");
+  }
 }
 
 // Resolves with the ids to delete ([] only when noneLabel allows it), or null when closed.
@@ -663,7 +644,7 @@ async function removeMass(ctx, mass) {
 }
 
 export async function renderMass(container, ctx, { id }) {
-  const [mass, roles] = await Promise.all([ctx.db.mass(id), ctx.db.roles()]);
+  const [mass, roles, layouts] = await Promise.all([ctx.db.mass(id), ctx.db.roles(), ctx.db.layouts()]);
   if (!mass) {
     container.append(
       h("p", { class: "empty", text: t("mass.notFound") }),
@@ -674,77 +655,103 @@ export async function renderMass(container, ctx, { id }) {
   const roleById = new Map(roles.map((role) => [role.id, role]));
   const slots = sortBySlotNo(mass.mass_music_slots ?? [], (slot) => roleById.get(slot.role_id)?.slot_no ?? 99);
 
+  const layout = layouts.find((item) => item.id === mass.layout_id) ?? null;
+
+  async function editMass() {
+    const [observances, venues, series] = await Promise.all([
+      observancesFor(ctx, mass.local_date),
+      ctx.db.usedVenues(),
+      ctx.db.series(mass.series_id)
+    ]);
+    const savedId = await openMassForm(ctx, { mass, observances, roles, layouts, venues, series });
+    if (savedId) {
+      notify(t("mass.saved"), "success");
+      ctx.refresh();
+    }
+  }
+
   const header = h("section", { class: "mass-head" },
-    h("a", { href: `#/date/${mass.local_date}`, class: "back-link" }, t("mass.backToDate", { date: formatLongDate(mass.local_date) })),
+    h("a", { href: `#/date/${mass.local_date}`, class: "back-link" }, t("mass.backToDate")),
+    h("h1", { class: "page-title", text: t("mass.pageTitle") }),
     h("p", { class: "date-title num", text: formatLongDate(mass.local_date) }),
-    h("h1", {}, massTitle(mass), mass.start_time ? h("span", { class: "time num", text: formatTime(mass.start_time) }) : null),
-    liturgyLine(mass.celebration_name, mass.color_code),
-    h("p", { class: "meta" },
-      [
-        sourceKey(mass.liturgy_source) === "unknown" ? null : t(`mass.source.${sourceKey(mass.liturgy_source)}`),
-        mass.venue_name,
-        mass.status && mass.status !== "planned" ? t(`mass.status.${mass.status}`) : null
-      ].filter(Boolean).join(" · ")
+    liturgyLine(mass.celebration_name, mass.color_code)
+  );
+
+  const facts = [
+    [t("mass.venueLabel"), mass.venue_name || "—"],
+    [t("mass.layoutLabel"), layout ? h("a", { href: "#/layouts", text: layout.name }) : t("mass.noLayout")],
+    mass.status && mass.status !== "planned" ? [t("mass.statusField"), t(`mass.status.${mass.status}`)] : null,
+    sourceKey(mass.liturgy_source) === "unknown" ? null : [t("mass.liturgyLabel"), t(`mass.source.${sourceKey(mass.liturgy_source)}`)]
+  ].filter(Boolean);
+
+  const card = h("section", { class: "mass-card", "aria-label": massTitle(mass) },
+    h("div", { class: "mass-card-head" },
+      h("h2", { class: "mass-name" }, massTitle(mass), mass.start_time ? h("span", { class: "time num", text: formatTime(mass.start_time) }) : null),
+      actionMenu(t("mass.moreActions"), [
+        { label: t("mass.edit"), onSelect: editMass },
+        { label: t("mass.editItems"), onSelect: () => openItemsEditor(ctx, mass, roles) },
+        { label: t("mass.delete"), danger: true, onSelect: () => removeMass(ctx, mass) }
+      ])
     ),
+    h("dl", { class: "mass-facts" }, facts.flatMap(([name, value]) => [h("dt", { text: name }), h("dd", {}, value)])),
     mass.notes ? h("p", { class: "notes", text: mass.notes }) : null,
-    h("div", { class: "button-row" },
-      h("button", {
-        type: "button",
-        class: "ghost-button",
-        onclick: async () => {
-          const [observances, layouts, venues, series] = await Promise.all([
-            observancesFor(ctx, mass.local_date),
-            ctx.db.layouts(),
-            ctx.db.usedVenues(),
-            ctx.db.series(mass.series_id)
-          ]);
-          const savedId = await openMassForm(ctx, { mass, observances, roles, layouts, venues, series });
-          if (savedId) {
-            notify(t("mass.saved"), "success");
-            ctx.refresh();
-          }
-        }
-      }, t("mass.edit")),
-      h("button", { type: "button", class: "ghost-button", onclick: () => openItemsEditor(ctx, mass, roles) }, t("mass.editItems")),
-      h("button", { type: "button", class: "ghost-button is-danger", onclick: () => removeMass(ctx, mass) }, t("mass.delete"))
+    h("div", { class: "mass-actions" },
+      h("button", { type: "button", class: "solid-button", onclick: () => notify(t("mass.performSoon")) }, t("mass.performMode")),
+      h("button", { type: "button", class: "ghost-button", onclick: () => openUploadDialog(ctx) }, t("mass.addScore"))
     )
   );
 
-  const items = slots.length
-    ? h("ol", { class: "slot-list" },
-        slots.map((slot) => {
-          const role = roleById.get(slot.role_id);
-          const itemName = slot.display_name || roleLabel(role) || t("mass.unnamedItem");
-          return h("li", { class: "slot" },
-            h("div", { class: "slot-head" },
-              h("span", { class: "role-no num", text: String((role?.slot_no ?? 0) + 1).padStart(2, "0") }),
-              h("div", { class: "slot-name" },
-                h("strong", { text: itemName }),
-                slot.display_name ? h("small", { text: t("mass.officialName", { name: roleLabel(role) }) }) : h("small", { text: role?.name_la ?? "" })
-              ),
-              h("div", { class: "row-actions" },
-                h("button", {
-                  type: "button",
-                  class: "link-button",
-                  onclick: () =>
-                    openUploadDialog(ctx, {
-                      title: t("mass.newScoreFor", { item: itemName }),
-                      saveLabel: t("mass.saveAndLink"),
-                      onSaved: (scoreId) => ctx.db.linkScore(slot.id, scoreId)
-                    })
-                }, t("mass.newScore")),
-                h("button", { type: "button", class: "link-button", onclick: () => openLinkPicker(ctx, slot, itemName) }, t("mass.fromLibrary"))
-              )
-            ),
-            slot.mass_music_entries.length
-              ? h("ul", { class: "entry-list" }, slot.mass_music_entries.map((entry) => entryRow(ctx, entry, itemName)))
-              : null
-          );
-        })
-      )
-    : h("p", { class: "empty", text: t("mass.noItems") });
+  // One row per linked score. Extra scores of the same item reuse the grid with empty number/role cells.
+  const musicRows = slots.flatMap((slot) => {
+    const role = roleById.get(slot.role_id);
+    const number = String((role?.slot_no ?? 0) + 1).padStart(2, "0");
+    const itemName = slot.display_name || role?.name_la || roleLabel(role) || t("mass.unnamedItem");
+    const entries = slot.mass_music_entries ?? [];
+    const slotActions = [
+      {
+        label: t("mass.newScore"),
+        onSelect: () =>
+          openUploadDialog(ctx, {
+            title: t("mass.newScoreFor", { item: itemName }),
+            saveLabel: t("mass.saveAndLink"),
+            onSaved: (scoreId) => ctx.db.linkScore(slot.id, scoreId)
+          })
+      },
+      { label: t("mass.linkFromRepertoire"), onSelect: () => openLinkPicker(ctx, slot, itemName) }
+    ];
+    const blank = () => h("span", { class: "music-empty-cell", "aria-hidden": "true" });
+    const rowFor = (entry, index) => {
+      const score = entry?.owned_scores;
+      const actions = entry
+        ? [
+            { label: t("mass.openScore"), onSelect: () => openViewer(ctx, score) },
+            { label: t("mass.unlink"), onSelect: () => unlinkEntry(ctx, entry, itemName) },
+            ...slotActions
+          ]
+        : slotActions;
+      return h("li", { class: "music-row" },
+        index === 0 ? h("span", { class: "music-no num", text: number }) : blank(),
+        index === 0
+          ? h("span", { class: "music-role" }, itemName, slot.display_name && role?.name_la ? h("small", { text: role.name_la }) : null)
+          : blank(),
+        entry
+          ? h("div", { class: "music-work" },
+              h("button", { type: "button", class: "music-title", onclick: () => openViewer(ctx, score) }, displayScoreTitle(score)),
+              score?.composer_name ? h("span", { class: "music-composer", text: score.composer_name }) : null
+            )
+          : h("div", { class: "music-work is-empty" }, h("span", { class: "music-title", text: t("mass.noScore") })),
+        actionMenu(t("mass.moreFor", { item: itemName }), actions)
+      );
+    };
+    return entries.length ? entries.map(rowFor) : [rowFor(null, 0)];
+  });
 
-  container.append(header, h("h2", { class: "section-head", text: t("mass.itemsHead") }), items);
+  const music = h("section", { class: "mass-music" },
+    h("h2", { text: t("mass.musicaMissae") }),
+    slots.length ? h("ol", { class: "music-list" }, musicRows) : h("p", { class: "empty", text: t("mass.noItems") })
+  );
+
+  container.append(header, card, music);
 }
 
 async function observancesFor(ctx, date) {

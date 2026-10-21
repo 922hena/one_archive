@@ -1,15 +1,26 @@
 :root {
-  --ink: #141615;
-  --muted: #6b6e6c;
-  --faint: #9a9d9b;
-  --line: #e3e4e1;
-  --line-strong: #c9cbc8;
-  --bg: #ffffff;
-  --soft: #f6f6f4;
-  --accent: #6f2926;
+  /* ONE ARCHIVE design system v1.1 (docs/design-system.md) */
+  --oa-black: #0B0B0D;
+  --oa-text: #3F4450;
+  --oa-muted: #858B94;
+  --oa-white: #FFFFFF;
+  --oa-line: #E9EAEC;
+  --oa-subtle: #F8F9FA;
+  --ink: var(--oa-text);
+  --muted: #5F6570;
+  --faint: var(--oa-muted);
+  --line: var(--oa-line);
+  --line-strong: #D5D8DC;
+  --bg: var(--oa-white);
+  --soft: var(--oa-subtle);
+  --accent: var(--oa-text);
+  --radius-card: 12px;
+  --control-height: 48px;
+  --tab-height: 64px;
+  --sidebar-width: 224px;
   --danger: #a3261f;
   --ok: #24563a;
-  --radius: 6px;
+  --radius: 8px;
   --sans: Pretendard, "Pretendard Variable", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
 }
 
@@ -323,4 +334,212 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   .page-row .list-main { min-width: 120px; }
   .page-actions { width: 100%; justify-content: flex-end; }
   .viewer-tool { padding: 0 8px; }
+}
+
+/* ==========================================================================
+   ONE ARCHIVE design system v1.1 — Black & White, Pretendard, 24px / 40px
+   ========================================================================== */
+body.app-page { font-size: 14px; line-height: 21px; letter-spacing: -0.015em; color: var(--oa-text); }
+h1, h2, h3 { color: var(--oa-black); letter-spacing: -0.015em; }
+.meta { font-size: 12px; line-height: 18px; }
+.hint { font-size: 12px; line-height: 18px; }
+.num { letter-spacing: 0; }
+
+/* buttons: 48px, radius 8px, one black primary per area */
+.solid-button, .ghost-button { min-height: var(--control-height); padding: 0 20px; border-radius: var(--radius); font-weight: 500; transition: background-color 150ms, border-color 150ms; }
+.solid-button { background: var(--oa-black); border-color: var(--oa-black); color: #fff; }
+.solid-button:hover { background: #26272b; }
+.solid-button.is-small { min-height: 44px; padding: 0 16px; font-size: 14px; }
+.ghost-button { border: 1px solid var(--oa-line); background: #fff; color: var(--oa-text); }
+.ghost-button:hover { background: var(--oa-subtle); border-color: var(--line-strong); }
+.icon-button { width: 44px; height: 44px; border-radius: var(--radius); border-color: var(--oa-line); color: var(--oa-text); }
+.link-button { min-height: 44px; padding: 0 8px; display: inline-flex; align-items: center; font-size: 14px; }
+:focus-visible { outline: 2px solid var(--oa-text); outline-offset: 2px; }
+
+/* inputs: 48px, 14px side padding */
+.field > span, .field legend, .field-label { font-size: 12px; line-height: 18px; }
+.field input:not([type="checkbox"]):not([type="radio"]), .field select,
+.mass-form .field select, .mass-form .field input:not([type="checkbox"]):not([type="radio"]) {
+  min-height: var(--control-height); padding: 0 14px; border: 1px solid var(--line-strong); border-radius: var(--radius); font-size: 14px;
+}
+.field textarea, .mass-form .field textarea { padding: 12px 14px; min-height: 96px; border: 1px solid var(--line-strong); border-radius: var(--radius); }
+.pick-row { min-height: 48px; align-items: center; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--oa-black); }
+
+/* page frame */
+.skip-link { background: var(--oa-black); }
+.app-header { background: #fff; }
+.app-bar { max-width: none; height: 56px; padding: 0 24px; gap: 16px; flex-wrap: nowrap; }
+.app-wordmark { color: var(--oa-black); font-weight: 800; letter-spacing: 0.04em; line-height: 56px; }
+.app-account { margin-left: auto; gap: 4px; }
+.app-account .link-button { color: var(--oa-text); }
+.app-main { max-width: 1280px; margin: 0 auto; padding: 40px 24px calc(40px + var(--tab-height) + env(safe-area-inset-bottom, 0px)); }
+.app-status { bottom: calc(var(--tab-height) + 16px + env(safe-area-inset-bottom, 0px)); background: var(--oa-black); box-shadow: none; border-radius: var(--radius); }
+.app-status[data-tone="error"] { background: var(--danger); }
+.error-box { border-radius: var(--radius-card); }
+
+/* bottom tabs (mobile, tablet) and left menu (PC) */
+.app-tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: grid; grid-template-columns: repeat(4, 1fr);
+  height: calc(var(--tab-height) + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: #fff; border-top: 1px solid var(--oa-line);
+}
+.app-tabs a, .app-tabs button {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 44px; padding: 0;
+  border: 0; background: none; color: var(--muted); font-size: 12px; line-height: 16px; text-decoration: none; cursor: pointer;
+}
+.app-tabs a:hover, .app-tabs button:hover { color: var(--oa-black); }
+.app-tabs [aria-current] { color: var(--oa-black); font-weight: 600; }
+.tab-icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 767px) { .app-account .meta { display: none; } }
+@media (min-width: 1200px) {
+  .app-tabs { top: 56px; right: auto; bottom: 0; width: var(--sidebar-width); height: auto; grid-template-columns: none; display: flex; flex-direction: column; gap: 4px; padding: 24px 12px; border-top: 0; border-right: 1px solid var(--oa-line); }
+  .app-tabs a, .app-tabs button { flex-direction: row; justify-content: flex-start; gap: 12px; height: 48px; padding: 0 12px; border-radius: var(--radius); font-size: 14px; }
+  .app-tabs [aria-current] { background: var(--oa-subtle); }
+  .app-main { margin: 0 0 0 var(--sidebar-width); max-width: none; padding-bottom: 40px; }
+  .view { max-width: 1280px; margin: 0 auto; }
+  .app-status { bottom: 20px; }
+}
+
+/* page heads */
+.page-head { border-bottom: 1px solid var(--oa-line); }
+.page-head h1, .page-title { margin: 0; font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -0.015em; }
+.lead { font-size: 14px; line-height: 21px; color: var(--muted); }
+.section-head, .section-bar { border-bottom-color: var(--oa-line); }
+.section-head, .section-bar h2 { font-size: 17px; line-height: 24px; font-weight: 600; }
+.date-title { font-size: 24px; line-height: 32px; font-weight: 600; color: var(--oa-black); letter-spacing: -0.015em; }
+.liturgy-line { font-size: 17px; line-height: 24px; font-weight: 600; color: var(--oa-black); }
+.liturgy-line.is-unknown { color: var(--muted); font-weight: 400; font-size: 14px; }
+.source { font-size: 12px; color: var(--muted); }
+.list-row { min-height: 48px; }
+.list-row .time { color: var(--muted); }
+
+/* cards and calendar */
+.cal-card { border: 1px solid var(--oa-line); border-radius: var(--radius-card); padding: 20px; box-shadow: none; }
+.cal-head { gap: 4px; margin-bottom: 12px; }
+.cal-head h2 { font-size: 17px; line-height: 24px; font-weight: 600; }
+.cal-weekdays span { font-size: 12px; }
+.cal-weekdays .is-sunday, .cal-day.is-sunday .cal-num { color: var(--oa-black); font-weight: 600; }
+.cal-day { min-height: 48px; border-radius: var(--radius); }
+.cal-day:hover { background: var(--oa-subtle); }
+.cal-day.is-selected { background: var(--oa-black); color: #fff; }
+.cal-day.is-selected .cal-num, .cal-day.is-selected.is-sunday .cal-num { color: #fff; }
+.cal-count { font-size: 11px; color: var(--muted); }
+.cal-day.is-today:not(.is-selected) { box-shadow: inset 0 0 0 1px var(--oa-black); }
+.cal-body { display: block; }
+.cal-title { margin: 0 0 12px; font-size: 17px; line-height: 24px; font-weight: 600; }
+.today-area { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--oa-line); min-width: 0; }
+.today-label { margin: 0; font-size: 12px; line-height: 18px; font-weight: 600; letter-spacing: 0.08em; color: var(--muted); }
+.today-date { margin: 4px 0 0; font-size: 24px; line-height: 32px; font-weight: 600; color: var(--oa-black); }
+.today-liturgy { margin: 12px 0 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 21px; line-height: 29px; font-weight: 600; color: var(--oa-black); }
+.today-liturgy.is-unknown { font-size: 14px; line-height: 21px; font-weight: 400; color: var(--muted); }
+.today-liturgy .color-dot { width: 12px; height: 12px; }
+.color-chip { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border: 1px solid var(--oa-line); border-radius: 12px; font-size: 12px; font-weight: 500; color: var(--oa-text); }
+.today-masses { margin: 16px 0 0; }
+.today-links { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 12px; }
+.today-links .link-button { padding-left: 0; }
+@media (min-width: 768px) {
+  .cal-card.is-home .cal-body { display: grid; grid-template-columns: minmax(320px, 440px) minmax(0, 1fr); gap: 32px; align-items: start; }
+  .cal-card.is-home .today-area { margin-top: 0; padding-top: 0; border-top: 0; padding-left: 32px; border-left: 1px solid var(--oa-line); }
+}
+.cal-card.is-home { position: static; }
+
+/* Home */
+.home-stack { display: flex; flex-direction: column; gap: 24px; }
+.home-hero h1 { margin: 0; font-size: 24px; line-height: 32px; font-weight: 600; }
+.home-hero p { margin: 4px 0 0; color: var(--muted); }
+.quick-head { margin: 8px 0 -12px; font-size: 17px; line-height: 24px; font-weight: 600; }
+.quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.quick-card {
+  display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; gap: 16px; min-height: 128px; padding: 20px;
+  border: 1px solid var(--oa-line); border-radius: var(--radius-card); background: #fff; color: var(--oa-text); text-align: left; cursor: pointer; transition: border-color 150ms;
+}
+.quick-card:hover { border-color: var(--oa-black); }
+.quick-icon { display: inline-flex; }
+.quick-title { display: block; font-size: 17px; line-height: 24px; font-weight: 600; color: var(--oa-black); }
+.quick-hint { display: block; font-size: 12px; line-height: 18px; color: var(--muted); }
+
+/* Mass detail */
+.mass-head { padding-bottom: 0; }
+.mass-head .page-title { font-size: 17px; line-height: 24px; }
+.mass-head .date-title { margin: 8px 0 0; font-size: 24px; color: var(--oa-black); font-weight: 600; }
+.mass-head .liturgy-line { margin: 4px 0 0; }
+.back-link { display: inline-flex; align-items: center; min-height: 44px; margin-bottom: 0; font-size: 14px; }
+.mass-card { margin-top: 24px; padding: 20px; border: 1px solid var(--oa-line); border-radius: var(--radius-card); }
+.mass-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.mass-name { margin: 0; font-size: 21px; line-height: 29px; font-weight: 600; color: var(--oa-black); }
+.mass-name .time { margin-left: 8px; font-size: 14px; font-weight: 500; color: var(--muted); }
+.mass-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; margin: 12px 0 0; font-size: 14px; }
+.mass-facts dt { color: var(--muted); font-size: 12px; line-height: 21px; }
+.mass-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.mass-card .notes { margin-top: 12px; }
+.mass-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+.mass-actions > * { flex: 1 1 160px; }
+.mass-music { margin-top: 24px; }
+.mass-music > h2 { margin: 0 0 12px; font-size: 17px; line-height: 24px; font-weight: 600; }
+
+/* music rows: number | Latin role | work + composer | menu — same grid in Mass and Layout */
+.music-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--oa-line); }
+.music-row, .role-row {
+  display: grid; grid-template-columns: 28px minmax(72px, 84px) minmax(0, 1fr) 44px; column-gap: 8px; align-items: center;
+  min-height: 48px; padding: 4px 0; border-bottom: 1px solid var(--oa-line); font-variant-numeric: tabular-nums;
+}
+.music-row > *, .role-row > * { min-width: 0; }
+.music-no { font-size: 12px; color: var(--oa-muted); }
+.music-role { font-size: 13px; line-height: 18px; font-weight: 500; color: var(--oa-text); overflow-wrap: break-word; }
+.music-role small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
+.music-work { display: flex; flex-direction: column; min-width: 0; }
+.music-title { display: block; padding: 0; border: 0; background: none; text-align: left; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--oa-text); cursor: pointer; overflow-wrap: anywhere; }
+button.music-title:hover { text-decoration: underline; text-underline-offset: 3px; }
+.music-composer { font-size: 12px; line-height: 18px; color: var(--muted); }
+.music-work.is-empty .music-title { color: var(--oa-muted); font-weight: 400; cursor: default; }
+.music-empty-cell { display: block; }
+
+/* ... menu */
+.menu { position: relative; justify-self: end; }
+.menu-button { width: 44px; height: 44px; border: 0; border-radius: var(--radius); background: none; color: var(--oa-text); font-size: 20px; line-height: 1; cursor: pointer; }
+.menu-button:hover, .menu-button[aria-expanded="true"] { background: var(--oa-subtle); }
+.menu-list { position: absolute; right: 0; top: 100%; z-index: 30; min-width: 200px; margin: 0; padding: 4px; list-style: none; background: #fff; border: 1px solid var(--oa-line); border-radius: var(--radius-card); box-shadow: 0 4px 16px rgba(11, 11, 13, 0.08); }
+.menu-item { display: flex; align-items: center; width: 100%; min-height: 44px; padding: 0 12px; border: 0; border-radius: var(--radius); background: none; color: var(--oa-text); text-align: left; font-size: 14px; cursor: pointer; }
+.menu-item:hover, .menu-item:focus-visible { background: var(--oa-subtle); }
+.menu-item.is-danger { color: var(--danger); }
+
+/* Layout screen and shared checklist */
+.layout-card { margin-top: 24px; padding: 20px; border: 1px solid var(--oa-line); border-radius: var(--radius-card); }
+.layout-fields { display: grid; grid-template-columns: 1fr; gap: 0 16px; }
+.layout-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.layout-parts { margin-top: 24px; }
+.layout-card .sheet-status { margin: 16px 0 0; }
+.layout-parts > h2 { margin: 0 0 12px; font-size: 17px; line-height: 24px; font-weight: 600; }
+@media (min-width: 768px) { .layout-fields { grid-template-columns: 1fr 1fr; } }
+.role-checklist { border: 0; border-radius: 0; }
+.role-tools { padding: 0 0 8px; border-bottom: 0; background: none; flex-wrap: wrap; }
+.role-checklist .role-row { grid-template-columns: 44px 28px minmax(72px, 100px) minmax(0, 1fr); padding: 4px 0; }
+.role-row:last-child { border-bottom: 1px solid var(--oa-line); }
+.role-check { display: grid; place-items: center; width: 44px; height: 44px; cursor: pointer; }
+.role-check input { width: 18px; height: 18px; margin: 0; }
+.role-row .role-rename { min-height: 44px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: var(--radius); font-size: 14px; }
+.role-row .role-name { display: block; font-size: 13px; line-height: 18px; font-weight: 500; overflow-wrap: break-word; }
+.role-row .role-name small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
+.role-row .role-no { width: auto; font-size: 12px; color: var(--oa-muted); }
+.role-row.is-off .role-name, .role-row.is-off .role-no { color: var(--oa-muted); }
+.role-lock { grid-column: 1 / -1; margin: 0 0 4px 80px; color: var(--muted); }
+@media (max-width: 520px) {
+  .role-checklist .role-row { grid-template-columns: 44px 28px minmax(0, 1fr); }
+  .role-checklist .role-rename { grid-column: 1 / -1; margin: 0 0 4px 0; }
+  .role-lock { margin-left: 0; }
+}
+
+/* dialogs and tables */
+.sheet { border: 1px solid var(--oa-line); border-radius: var(--radius-card); box-shadow: 0 8px 32px rgba(11, 11, 13, 0.12); }
+.sheet::backdrop { background: rgba(11, 11, 13, 0.4); }
+.sheet-head, .sheet-footer { border-color: var(--oa-line); }
+.data-table th { border-bottom-color: var(--oa-line); font-size: 12px; }
+.data-table td, .plain-list > li { border-bottom-color: var(--oa-line); }
+.badge { background: var(--oa-black); }
+.entry-row { border-radius: var(--radius); }
+
+@media (max-width: 860px) { .cal-card { position: static; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

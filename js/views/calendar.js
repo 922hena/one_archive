@@ -24,19 +24,20 @@ function groupBy(rows, key) {
   return map;
 }
 
-function calendarCard(ctx, { year, month, selected, today, observancesByDate, massesByDate }) {
+// base: which screen the dates link to ("date" list screen or "home"). footer: nodes shown beside/below the grid.
+export function calendarCard(ctx, { year, month, selected, today, observancesByDate, massesByDate, base = "date", footer = null, heading = null }) {
   const previous = addMonths(year, month, -1);
   const next = addMonths(year, month, 1);
   const monthLink = (target) => {
     const day = Math.min(parseIsoDate(selected).day, 28);
-    return `#/date/${target.year}-${String(target.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    return `#/${base}/${target.year}-${String(target.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   };
 
   const head = h("div", { class: "cal-head" },
     h("a", { href: monthLink(previous), class: "icon-button", "aria-label": t("calendar.previousMonth") }, "‹"),
     h("h2", { class: "num", text: formatMonthTitle(year, month) }),
     h("a", { href: monthLink(next), class: "icon-button", "aria-label": t("calendar.nextMonth") }, "›"),
-    h("a", { href: `#/date/${today}`, class: "link-button" }, t("calendar.today"))
+    h("a", { href: `#/${base}/${today}`, class: "link-button" }, t("calendar.today"))
   );
 
   const weekdays = h("div", { class: "cal-row cal-weekdays", "aria-hidden": "true" },
@@ -58,7 +59,7 @@ function calendarCard(ctx, { year, month, selected, today, observancesByDate, ma
           observances.map((observance) => liturgyLabel(observance.name_ko, observance.color_code)).join(", "),
           massCount ? t("calendar.massCount", { count: massCount }) : ""
         ].filter(Boolean).join(", ");
-        return h("a", { href: `#/date/${cell.iso}`, class: classes.join(" "), "aria-label": label, "aria-current": cell.iso === selected ? "date" : null },
+        return h("a", { href: `#/${base}/${cell.iso}`, class: classes.join(" "), "aria-label": label, "aria-current": cell.iso === selected ? "date" : null },
           h("span", { class: "cal-num num", text: String(cell.day) }),
           h("span", { class: "cal-marks" },
             observances.length ? colorDot(observances[0].color_code, colorSwatch(observances[0].color_code)) : null,
@@ -69,8 +70,13 @@ function calendarCard(ctx, { year, month, selected, today, observancesByDate, ma
     )
   );
 
-  return h("section", { class: "cal-card", "aria-label": t("calendar.title") }, head, weekdays, weeks,
-    h("p", { class: "hint", text: t("calendar.legend") })
+  return h("section", { class: base === "home" ? "cal-card is-home" : "cal-card", "aria-label": t("calendar.title") },
+    heading ? h("h2", { class: "cal-title", text: heading }) : null,
+    head,
+    h("div", { class: "cal-body" },
+      h("div", { class: "cal-grid" }, weekdays, weeks, h("p", { class: "hint", text: t("calendar.legend") })),
+      footer
+    )
   );
 }
 
@@ -104,7 +110,7 @@ function dayPanel(ctx, { selected, observances, masses, roles, layouts, venues }
     : null;
 
   return h("section", { class: "day-panel" },
-    h("h1", { class: "date-title num", text: formatLongDate(selected) }),
+    h("h2", { class: "date-title num", text: formatLongDate(selected) }),
     liturgy,
     source
       ? h("p", { class: "source" },
@@ -151,6 +157,10 @@ export async function renderCalendar(container, ctx, { date }) {
   const massesByDate = groupBy(massDates, "local_date");
 
   container.append(
+    h("section", { class: "page-head" },
+      h("h1", { text: t("calendar.pageTitle") }),
+      h("a", { href: "#/layouts", class: "ghost-button" }, t("calendar.layoutLink"))
+    ),
     h("div", { class: "calendar-layout" },
       calendarCard(ctx, { year, month, selected, today, observancesByDate, massesByDate }),
       dayPanel(ctx, { selected, observances: observancesByDate.get(selected) ?? [], masses, roles, layouts, venues })

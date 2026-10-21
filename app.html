@@ -14,12 +14,7 @@
 
   <header class="app-header">
     <div class="app-bar">
-      <a class="app-wordmark" href="index.html" data-i18n-label="app.home">ONE ARCHIVE</a>
-      <nav class="app-nav" data-i18n-label="app.nav">
-        <a href="#/date" data-nav="mass" data-i18n="nav.mass">Mass</a>
-        <a href="#/library" data-nav="library" data-i18n="nav.library">Score Library</a>
-        <a href="#/layouts" data-nav="layouts" data-i18n="nav.layouts">Layout</a>
-      </nav>
+      <a class="app-wordmark" href="#/home" data-i18n-label="app.home">ONE ARCHIVE</a>
       <div class="app-account">
         <span id="account-email" class="meta"></span>
         <a href="schedule.html" class="link-button" data-i18n="nav.account">계정</a>
@@ -31,6 +26,25 @@
   <main id="view" class="app-main" tabindex="-1">
     <p class="meta" data-i18n="common.loading">불러오는 중…</p>
   </main>
+
+  <nav class="app-tabs" data-i18n-label="app.nav">
+    <a href="#/home" data-nav="home">
+      <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+      <span data-i18n="nav.home">Calendar</span>
+    </a>
+    <a href="#/library" data-nav="library">
+      <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3V4Z"/><path d="M5 17a3 3 0 0 1 3-3h10"/></svg>
+      <span data-i18n="nav.repertoire">Repertoire</span>
+    </a>
+    <button type="button" data-action="search">
+      <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <span data-i18n="nav.search">Search</span>
+    </button>
+    <a href="#/date" data-nav="mass">
+      <svg class="tab-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg>
+      <span data-i18n="nav.mass">Mass</span>
+    </a>
+  </nav>
 
   <p id="app-status" class="app-status" role="status" hidden></p>
 

@@ -4,6 +4,7 @@ import { t, setLocale, translateDom } from "./i18n.js";
 import { todayIso } from "./format.js";
 import { h, errorMessage, notify, confirmDialog } from "./ui.js";
 import { renderCalendar } from "./views/calendar.js";
+import { renderHome } from "./views/home.js";
 import { renderMass } from "./views/mass.js";
 import { renderLibrary } from "./views/library.js";
 import { renderLayouts } from "./views/layouts.js";
@@ -18,8 +19,9 @@ function parseRoute(hash) {
   const [name, param] = hash.replace(/^#\/?/, "").split("/");
   if (name === "mass" && UUID.test(param ?? "")) return { nav: "mass", render: renderMass, params: { id: param } };
   if (name === "library") return { nav: "library", render: renderLibrary, params: {} };
-  if (name === "layouts") return { nav: "layouts", render: renderLayouts, params: {} };
-  return { nav: "mass", render: renderCalendar, params: { date: param ?? todayIso() } };
+  if (name === "layouts") return { nav: "mass", render: renderLayouts, params: {} };
+  if (name === "date") return { nav: "mass", render: renderCalendar, params: { date: param ?? todayIso() } };
+  return { nav: "home", render: renderHome, params: { date: param ?? todayIso() } };
 }
 
 async function route(ctx) {
@@ -73,6 +75,9 @@ async function boot() {
       notify(t("errors.logoutFailed"), "error");
     }
   });
+
+  // Search is not built yet; the tab only explains that.
+  document.querySelector('[data-action="search"]')?.addEventListener("click", () => notify(t("home.searchSoon")));
 
   const ctx = {
     supabase,

@@ -103,6 +103,58 @@ export function confirmDialog(message, { confirmLabel = t("common.confirm"), dan
   });
 }
 
+// "…" menu. items: [{ label, onSelect, danger }]. Closes on outside click and Escape.
+export function actionMenu(label, items) {
+  const button = h("button", {
+    type: "button",
+    class: "menu-button",
+    "aria-label": label,
+    "aria-haspopup": "menu",
+    "aria-expanded": "false"
+  }, "⋯");
+  const list = h("ul", { class: "menu-list", role: "menu", hidden: true },
+    items.map((item) =>
+      h("li", { role: "none" },
+        h("button", {
+          type: "button",
+          role: "menuitem",
+          class: item.danger ? "menu-item is-danger" : "menu-item",
+          onclick: () => {
+            close();
+            item.onSelect();
+          }
+        }, item.label)
+      )
+    )
+  );
+  const wrap = h("div", { class: "menu" }, button, list);
+
+  function outside(event) {
+    if (!wrap.contains(event.target)) close();
+  }
+  function onKey(event) {
+    if (event.key === "Escape") {
+      close();
+      button.focus();
+    }
+  }
+  function close() {
+    list.hidden = true;
+    button.setAttribute("aria-expanded", "false");
+    document.removeEventListener("click", outside);
+    document.removeEventListener("keydown", onKey);
+  }
+  button.addEventListener("click", () => {
+    if (!list.hidden) return close();
+    list.hidden = false;
+    button.setAttribute("aria-expanded", "true");
+    document.addEventListener("click", outside);
+    document.addEventListener("keydown", onKey);
+    list.querySelector("button")?.focus();
+  });
+  return wrap;
+}
+
 export function setBusy(buttons, busy) {
   for (const button of buttons) if (button) button.disabled = busy;
 }
