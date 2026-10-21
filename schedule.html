@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="YEAR SCORE 회원가입과 로그인." />
-  <meta name="theme-color" content="#f3f3f1" />
-  <title>YEAR SCORE — 로그인</title>
+  <meta name="theme-color" content="#ffffff" />
+  <title>YEAR SCORE — Log in</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   <link rel="stylesheet" href="styles.css" />
@@ -18,7 +18,7 @@
       <a class="wordmark" href="index.html" aria-label="YEAR SCORE 소개로 이동">
         <span>YEAR</span><span>SCORE</span>
       </a>
-      <a class="quiet-link" href="index.html">소개</a>
+      <a class="quiet-link" href="index.html">About</a>
     </div>
   </header>
 
@@ -26,56 +26,56 @@
     <div class="shell schedule-layout">
       <div class="schedule-intro">
         <p class="eyebrow">ACCOUNT</p>
-        <h1>로그인</h1>
-        <p class="schedule-lead">이메일과 비밀번호로 회원가입하고 로그인합니다.</p>
+        <h1>Log in</h1>
+        <p class="schedule-lead">Sign in with your email and password, or create an account.</p>
         <p id="account-line" class="account-line" hidden></p>
-        <button id="logout-button" class="text-button" type="button" hidden>로그아웃</button>
+        <button id="logout-button" class="text-button" type="button" hidden>Log out</button>
       </div>
 
       <div class="schedule-panels">
         <p id="setup-message" class="notice" hidden></p>
 
         <section id="auth-panel" class="panel-card" aria-labelledby="auth-title">
-          <h2 id="auth-title">로그인</h2>
+          <h2 id="auth-title">Log in</h2>
           <form id="auth-form">
             <label class="field">
-              <span>이메일</span>
+              <span>Email</span>
               <input id="email" name="email" type="email" autocomplete="email" required />
             </label>
             <label class="field">
-              <span>비밀번호</span>
+              <span>Password</span>
               <input id="password" name="password" type="password" autocomplete="current-password" minlength="6" required />
             </label>
             <div class="form-actions">
-              <button id="login-button" class="primary-button" type="submit">로그인</button>
-              <button id="signup-button" class="text-button" type="button">회원가입</button>
-              <button id="forgot-button" class="text-button" type="button">비밀번호를 잊으셨나요?</button>
+              <button id="login-button" class="primary-button" type="submit">Log in</button>
+              <button id="signup-button" class="secondary-button" type="button">Sign up</button>
+              <button id="forgot-button" class="text-button" type="button">Forgot password?</button>
             </div>
           </form>
           <p id="auth-message" class="notice" role="status" hidden></p>
         </section>
 
         <section id="reset-panel" class="panel-card" aria-labelledby="reset-title" hidden>
-          <h2 id="reset-title">새 비밀번호</h2>
+          <h2 id="reset-title">New password</h2>
           <form id="reset-form">
             <label class="field">
-              <span>새 비밀번호</span>
+              <span>New password</span>
               <input id="new-password" type="password" autocomplete="new-password" minlength="6" required />
             </label>
             <label class="field">
-              <span>새 비밀번호 확인</span>
+              <span>Confirm new password</span>
               <input id="new-password-check" type="password" autocomplete="new-password" minlength="6" required />
             </label>
             <div class="form-actions">
-              <button id="reset-button" class="primary-button" type="submit">새 비밀번호 저장</button>
+              <button id="reset-button" class="primary-button" type="submit">Save new password</button>
             </div>
           </form>
           <p id="reset-message" class="notice" role="status" hidden></p>
         </section>
 
         <section id="session-panel" class="panel-card" aria-labelledby="session-title" hidden>
-          <h2 id="session-title">  </h2>
-          <a id="app-link" class="primary-button" href="app.html">Mass·Score로 이동</a>
+          <h2 id="session-title">Signed in</h2>
+          <a id="app-link" class="primary-button" href="app.html">Open the app</a>
           <p id="session-message" class="notice" role="status" hidden></p>
         </section>
       </div>
