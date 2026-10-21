@@ -1,7 +1,10 @@
 import { SCORE_BUCKET } from "./supabase.js";
-import { compareMasses } from "./format.js";
+import { compareMasses, todayIso } from "./format.js";
 import { comparePages } from "./pages.js";
-import { liturgyFields, occurrenceDates } from "./recurrence.js";
+import { liturgyFields, needsLiturgyRefresh, occurrenceDates, occurrenceWindow } from "./recurrence.js";
+import { isMissingRelation } from "./errors.js";
+
+export { isMissingRelation };
 
 export const SIGNED_URL_SECONDS = 300;
 
@@ -25,11 +28,6 @@ async function run(query) {
 function normalizeName(value) {
   const text = String(value ?? "").trim();
   return text ? text : null;
-}
-
-function isMissingRelation(error) {
-  const message = String(error?.message ?? "").toLowerCase();
-  return error?.code === "42P01" || error?.code === "PGRST205" || message.includes("schema cache") || message.includes("mass_series");
 }
 
 function sortFiles(score) {
@@ -182,7 +180,11 @@ export function createDb(supabase) {
     return [...names].sort((a, b) => a.localeCompare(b, "ko"));
   }
 
-  async function ensureOccurrences(from, to) {
+  async function ensureOccurrences(rangeFrom, rangeTo) {
+    const today = todayIso();
+    const range = occurrenceWindow(rangeFrom, rangeTo, today);
+    if (!range) return;
+    const { from, to } = range;
     let series;
     try {
       series = await seriesRows();
@@ -204,11 +206,20 @@ export function createDb(supabase) {
     const layoutById = new Map(layoutRows.map((layout) => [layout.id, layout]));
 
     for (const item of active) {
+      const existing = await run(
+        supabase
+          .from("mass_events")
+          .select("id,local_date,liturgy_source,series_locked")
+          .eq("series_id", item.id)
+          .gte("local_date", from)
+          .lte("local_date", to)
+      );
+      for (const row of existing) {
+        const observance = observanceByDate.get(row.local_date);
+        if (observance && needsLiturgyRefresh(row, today)) await updateMass(row.id, liturgyFields(observance));
+      }
       const dates = occurrenceDates(item, from, to).filter((date) => !skipSet.has(`${item.id}:${date}`));
       if (!dates.length) continue;
-      const existing = await run(
-        supabase.from("mass_events").select("local_date").eq("series_id", item.id).gte("local_date", from).lte("local_date", to)
-      );
       const have = new Set(existing.map((row) => row.local_date));
       const slots = (layoutById.get(item.layout_id)?.user_mass_layout_items ?? []).map((slot) => ({
         role_id: slot.role_id,
@@ -238,15 +249,15 @@ export function createDb(supabase) {
     }
   }
 
-  async function syncFutureMasses(seriesId, fromDate, patch, layoutItems) {
-    const rows = await run(
-      supabase
-        .from("mass_events")
-        .select("id,mass_music_slots(id,role_id,display_name,mass_music_entries(id))")
-        .eq("series_id", seriesId)
-        .eq("series_locked", false)
-        .gte("local_date", fromDate)
-    );
+  // fromDate null = every date of the series, past included. Dates edited with "This Mass only" stay as they are.
+  async function syncSeriesMasses(seriesId, fromDate, patch, layoutItems) {
+    let query = supabase
+      .from("mass_events")
+      .select("id,mass_music_slots(id,role_id,display_name,mass_music_entries(id))")
+      .eq("series_id", seriesId)
+      .eq("series_locked", false);
+    if (fromDate) query = query.gte("local_date", fromDate);
+    const rows = await run(query);
     for (const row of rows) {
       await updateMass(row.id, patch);
       const linked = (row.mass_music_slots ?? []).some((slot) => (slot.mass_music_entries ?? []).length);
@@ -254,20 +265,52 @@ export function createDb(supabase) {
     }
   }
 
-  async function endSeries(seriesId, lastDate) {
-    await updateSeries(seriesId, { ends_on: lastDate });
-    const later = await run(
-      supabase
-        .from("mass_events")
-        .select("id,series_locked,mass_music_slots(id,mass_music_entries(id))")
-        .eq("series_id", seriesId)
-        .gt("local_date", lastDate)
-    );
-    for (const row of later) {
-      const linked = (row.mass_music_slots ?? []).some((slot) => (slot.mass_music_entries ?? []).length);
-      if (row.series_locked || linked) continue;
-      await deleteMass(row.id);
+  async function seriesMasses(seriesId, { from = null } = {}) {
+    let query = supabase
+      .from("mass_events")
+      .select(
+        "id,local_date,start_time,title,series_locked,created_at," +
+          "mass_music_slots(id,mass_music_entries(id,performance_confirmations(id)))"
+      )
+      .eq("series_id", seriesId);
+    if (from) query = query.gte("local_date", from);
+    const rows = await run(query);
+    return rows
+      .map((row) => {
+        const entries = (row.mass_music_slots ?? []).flatMap((slot) => slot.mass_music_entries ?? []);
+        return {
+          id: row.id,
+          local_date: row.local_date,
+          start_time: row.start_time,
+          title: row.title,
+          created_at: row.created_at,
+          series_locked: Boolean(row.series_locked),
+          linked: entries.length > 0,
+          recorded: entries.some((entry) => (entry.performance_confirmations ?? []).length > 0)
+        };
+      })
+      .sort((a, b) => a.local_date.localeCompare(b.local_date) || compareMasses(a, b));
+  }
+
+  async function deleteMasses(ids) {
+    for (let index = 0; index < ids.length; index += 50) {
+      await run(supabase.from("mass_events").delete().in("id", ids.slice(index, index + 50)));
     }
+  }
+
+  // Remember the dates so a later weekday change does not recreate them.
+  async function forgetOccurrences(seriesId, masses) {
+    const targets = (masses ?? []).filter((item) => item?.id);
+    for (const item of targets) {
+      if (seriesId && item.local_date) {
+        const { error } = await supabase.from("mass_series_skips").insert({
+          series_id: seriesId,
+          skip_date: item.local_date
+        });
+        if (error && error.code !== "23505" && !isMissingRelation(error)) throw error;
+      }
+    }
+    await deleteMasses(targets.map((item) => item.id));
   }
 
   async function saveSlots(massId, wanted, existing) {
@@ -475,8 +518,10 @@ export function createDb(supabase) {
     deleteSeries,
     usedVenues,
     ensureOccurrences,
-    syncFutureMasses,
-    endSeries,
+    syncSeriesMasses,
+    seriesMasses,
+    deleteMasses,
+    forgetOccurrences,
     saveSlots,
     layouts,
     createLayout,

@@ -8,11 +8,21 @@ import {
   liturgyLabel,
   colorSwatch,
   sortBySlotNo,
-  weekdayIndex
+  weekdayIndex,
+  weekdayName
 } from "../format.js";
 import { h, createDialog, confirmDialog, errorMessage, notify, setBusy, colorDot, displayScoreTitle } from "../ui.js";
 import { roleChecklist, layoutSelection, roleLabel } from "./layouts.js";
-import { liturgyFields, sourceKey, weeksAheadRange } from "../recurrence.js";
+import {
+  deletionGroups,
+  firstOccurrenceOn,
+  liturgyFields,
+  offWeekday,
+  shiftIso,
+  sourceKey,
+  weeksAheadRange
+} from "../recurrence.js";
+import { isMissingRelation } from "../db.js";
 import { openUploadDialog } from "./library.js";
 import { openViewer } from "./viewer.js";
 
@@ -36,11 +46,6 @@ export function massTitle(mass) {
 export function liturgyLine(name, colorCode, { unknownKey = "liturgy.unknown" } = {}) {
   if (!name) return h("p", { class: "liturgy-line is-unknown", text: t(unknownKey) });
   return h("p", { class: "liturgy-line" }, liturgyLabel(name, colorCode), " ", colorDot(colorCode, colorSwatch(colorCode)));
-}
-
-function missingSeries(error) {
-  const message = String(error?.message ?? "").toLowerCase();
-  return error?.code === "42P01" || error?.code === "PGRST205" || message.includes("schema cache") || message.includes("mass_series");
 }
 
 function timeControls(startTime) {
@@ -203,12 +208,13 @@ export function openMassForm(ctx, { date, observances = [], roles = [], layouts 
   const scopeName = `scope-${uid}`;
   const scopeThis = h("input", { type: "radio", name: scopeName, value: "this", checked: true });
   const scopeFuture = h("input", { type: "radio", name: scopeName, value: "future" });
-  const stopInput = h("input", { type: "checkbox" });
+  const scopeAll = h("input", { type: "radio", name: scopeName, value: "all" });
   const scopeBox = h("div", { class: "choices" },
     h("span", { class: "field-label", text: t("mass.recurrenceScope") }),
     h("label", { class: "choice" }, scopeThis, h("span", { text: t("mass.recurrenceThisOnly") })),
     h("label", { class: "choice" }, scopeFuture, h("span", { text: t("mass.recurrenceFuture") })),
-    h("label", { class: "choice" }, stopInput, h("span", { text: t("mass.recurrenceStop") }))
+    h("label", { class: "choice" }, scopeAll, h("span", { text: t("mass.recurrenceAll") })),
+    h("p", { class: "hint", text: t("mass.recurrenceWeekdayHint") })
   );
   const recurrenceFields = h("div", {},
     recurrence,
@@ -217,12 +223,10 @@ export function openMassForm(ctx, { date, observances = [], roles = [], layouts 
   if (editing && series) {
     recurrence.disabled = true;
     const syncScope = () => {
-      const future = scopeFuture.checked;
-      layoutSelect.disabled = !future;
-      weekday.disabled = !future;
+      layoutSelect.disabled = scopeThis.checked;
+      weekday.disabled = !scopeFuture.checked;
     };
-    scopeThis.addEventListener("change", syncScope);
-    scopeFuture.addEventListener("change", syncScope);
+    for (const input of [scopeThis, scopeFuture, scopeAll]) input.addEventListener("change", syncScope);
     syncScope();
   }
 
@@ -232,7 +236,8 @@ export function openMassForm(ctx, { date, observances = [], roles = [], layouts 
   // Layout and recurrence belong to a series; a one-off Mass edits its items in the Mass page.
   const showSeriesFields = !editing || Boolean(series);
 
-  body.append(
+  // Native append would print a skipped (null) field as the text "null".
+  body.append(...[
     h("fieldset", { class: "field choices form-liturgy" },
       h("legend", { text: t("mass.liturgyLabel") }),
       h("p", { class: "dialog-date num", text: formatLongDate(formDate) }),
@@ -261,7 +266,7 @@ export function openMassForm(ctx, { date, observances = [], roles = [], layouts 
       : null,
     h("label", { class: "field" }, h("span", { text: t("mass.notesLabel") }), notesInput),
     status ? status.element : null
-  );
+  ].filter(Boolean));
 
   const saveButton = h("button", { type: "button", class: "solid-button" }, t("mass.saveButton"));
   footer.append(h("button", { type: "button", class: "ghost-button", onclick: close }, t("mass.cancelButton")), saveButton);
@@ -298,6 +303,7 @@ export function openMassForm(ctx, { date, observances = [], roles = [], layouts 
 
   return new Promise((resolve) => {
     let savedId = null;
+    let afterClose = null;
     saveButton.addEventListener("click", async () => {
       const stop = (message, target) => {
         setStatus(message);
@@ -311,31 +317,38 @@ export function openMassForm(ctx, { date, observances = [], roles = [], layouts 
       let seriesId = null;
       try {
         if (editing) {
-          const future = Boolean(series) && scopeFuture.checked;
-          if (!future) {
+          const scope = !series || scopeThis.checked ? "this" : scopeAll.checked ? "all" : "future";
+          if (scope === "this") {
             if (series) fields.series_locked = true;
             await ctx.db.updateMass(mass.id, fields);
+            savedId = mass.id;
           } else {
+            if (scope === "all" && !(await confirmDialog(t("mass.recurrenceAllConfirm"), { confirmLabel: t("mass.saveButton") }))) {
+              setBusy([saveButton], false);
+              return;
+            }
+            const newWeekday = Number(weekday.value);
+            const weekdayChanged = scope === "future" && newWeekday !== Number(series.weekday);
             const patch = {
               title: fields.title,
               start_time: fields.start_time,
               venue_name: fields.venue_name,
               layout_id: layoutSelect.value || null
             };
-            await ctx.db.updateSeries(series.id, {
-              ...patch,
-              weekday: Number(weekday.value),
-              interval_weeks: Number(series.interval_weeks)
-            });
+            // A new weekday starts from this date, so past weeks are not filled in on the new day.
+            await ctx.db.updateSeries(series.id, weekdayChanged ? { ...patch, weekday: newWeekday, starts_on: mass.local_date } : patch);
             await ctx.db.updateMass(mass.id, { ...fields, ...patch, series_locked: false });
             const layout = knownLayouts.find((item) => item.id === layoutSelect.value);
             const items = layout
               ? [...layoutSelection(layout)].map(([role_id, display_name]) => ({ role_id, display_name: display_name || null }))
               : [];
-            await ctx.db.syncFutureMasses(series.id, mass.local_date, patch, items);
-            if (stopInput.checked) await ctx.db.endSeries(series.id, mass.local_date);
+            await ctx.db.syncSeriesMasses(series.id, scope === "all" ? null : mass.local_date, patch, items);
+            if (weekdayChanged) {
+              afterClose = await settleOldWeekday(ctx, series, mass, newWeekday);
+            } else {
+              savedId = mass.id;
+            }
           }
-          savedId = mass.id;
         } else {
           let layoutId = layoutSelect.value || null;
           const items = checklist.read();
@@ -375,9 +388,10 @@ export function openMassForm(ctx, { date, observances = [], roles = [], layouts 
           }
         }
         close();
+        afterClose?.();
       } catch (error) {
         if (seriesId && !savedId) await ctx.db.deleteSeries(seriesId).catch(() => {});
-        setStatus(missingSeries(error) ? t("mass.seriesNeeded") : errorMessage(error, "mass.saveFailed"));
+        setStatus(isMissingRelation(error) ? t("mass.seriesNeeded") : errorMessage(error, "mass.saveFailed"));
         setBusy([saveButton], false);
       }
     });
@@ -487,6 +501,167 @@ function entryRow(ctx, entry, itemName) {
   );
 }
 
+// Resolves with the ids to delete ([] only when noneLabel allows it), or null when closed.
+function pickMasses(rows, { title, lead, cancelLabel, noneLabel = null }) {
+  return new Promise((resolve) => {
+    const { body, footer, close, dialog } = createDialog(title, { wide: true });
+    const groups = deletionGroups(rows);
+    const choices = [];
+    const row = (item, { checked = false, disabled = false } = {}) => {
+      const box = h("input", { type: "checkbox", checked, disabled });
+      if (!disabled) choices.push({ box, id: item.id });
+      const notes = [
+        formatTime(item.start_time),
+        massTitle(item),
+        item.linked ? t("mass.pickLinkedTag") : null,
+        item.series_locked ? t("mass.pickEditedTag") : null
+      ].filter(Boolean);
+      return h("li", {},
+        h("label", { class: disabled ? "pick-row is-disabled" : "pick-row" },
+          box,
+          h("span", { class: "pick-main" },
+            h("span", { class: "num", text: formatLongDate(item.local_date) }),
+            h("span", { class: "meta", text: notes.join(" · ") })
+          )
+        )
+      );
+    };
+    const group = (headKey, items, options) =>
+      items.length
+        ? h("section", { class: "pick-group" },
+            h("h3", { class: "sub-head", text: t(headKey, { count: items.length }) }),
+            h("ul", { class: "plain-list" }, items.map((item) => row(item, options)))
+          )
+        : null;
+    body.append(...[
+      h("p", { class: "sheet-message", text: lead }),
+      group("mass.pickPlainHead", groups.plain, { checked: true }),
+      group("mass.pickCarefulHead", groups.careful),
+      group("mass.pickRecordedHead", groups.recorded, { disabled: true })
+    ].filter(Boolean));
+
+    let answer = null;
+    const chosen = () => choices.filter((choice) => choice.box.checked).map((choice) => choice.id);
+    const deleteButton = h("button", { type: "button", class: "solid-button is-danger" });
+    const update = () => {
+      const count = chosen().length;
+      deleteButton.textContent = count || !noneLabel ? t("mass.pickDeleteButton", { count }) : noneLabel;
+      deleteButton.disabled = count === 0 && !noneLabel;
+    };
+    body.addEventListener("change", update);
+    update();
+    deleteButton.addEventListener("click", () => {
+      answer = chosen();
+      close();
+    });
+    footer.append(h("button", { type: "button", class: "ghost-button", onclick: close }, cancelLabel), deleteButton);
+    dialog.addEventListener("close", () => resolve(answer));
+  });
+}
+
+function chooseDeleteScope(mass) {
+  return new Promise((resolve) => {
+    const { body, footer, close, dialog } = createDialog(t("mass.deleteScopeTitle"));
+    const name = `delete-scope-${Math.random().toString(36).slice(2)}`;
+    body.append(
+      h("p", { class: "sheet-message", text: t("mass.deleteScopeLead", { title: massTitle(mass) }) }),
+      h("div", { class: "choices delete-scope" },
+        ["this", "future", "all"].map((value) =>
+          h("label", { class: "choice" },
+            h("input", { type: "radio", name, value, checked: value === "this" }),
+            h("span", { text: t(`mass.deleteScope.${value}`) })
+          )
+        )
+      )
+    );
+    let answer = null;
+    footer.append(
+      h("button", { type: "button", class: "ghost-button", onclick: close }, t("common.cancel")),
+      h("button", {
+        type: "button",
+        class: "solid-button is-danger",
+        onclick: () => {
+          answer = body.querySelector(`input[name="${name}"]:checked`)?.value ?? null;
+          close();
+        }
+      }, t("mass.deleteNext"))
+    );
+    dialog.addEventListener("close", () => resolve(answer));
+  });
+}
+
+// After a weekday change the new-day Masses are made first; then the member decides about the old-day ones.
+async function settleOldWeekday(ctx, series, mass, newWeekday) {
+  const range = weeksAheadRange(mass.local_date, 16);
+  await ctx.db.ensureOccurrences(range.from, range.to);
+  const leftovers = offWeekday(await ctx.db.seriesMasses(series.id, { from: mass.local_date }), newWeekday);
+  let ids = [];
+  if (leftovers.length) {
+    ids =
+      (await pickMasses(leftovers, {
+        title: t("mass.oldWeekdayTitle"),
+        lead: t("mass.oldWeekdayLead", { weekday: weekdayName(newWeekday), count: leftovers.length }),
+        cancelLabel: t("mass.pickKeepAll")
+      })) ?? [];
+    await ctx.db.forgetOccurrences(series.id, leftovers.filter((row) => ids.includes(row.id)));
+  }
+  const message = ids.length ? t("mass.weekdayMoved", { count: ids.length }) : t("mass.weekdayMovedKept");
+  const firstNew = firstOccurrenceOn(mass.local_date, newWeekday) ?? mass.local_date;
+  return () => {
+    notify(message, "success");
+    if (ids.includes(mass.id)) ctx.navigate(`#/date/${firstNew}`);
+    else ctx.refresh();
+  };
+}
+
+async function removeMass(ctx, mass) {
+  let series = null;
+  try {
+    series = await ctx.db.series(mass.series_id);
+  } catch (error) {
+    notify(errorMessage(error, "mass.deleteFailed"), "error");
+    return;
+  }
+  if (!series) {
+    const ok = await confirmDialog(t("mass.deleteConfirm", { title: massTitle(mass) }), { confirmLabel: t("common.delete"), danger: true });
+    if (!ok) return;
+  }
+  const scope = series ? await chooseDeleteScope(mass) : "this";
+  if (!scope) return;
+  try {
+    if (scope === "this") {
+      await ctx.db.forgetOccurrence(mass);
+      notify(t("mass.deleted"), "success");
+      ctx.navigate(`#/date/${mass.local_date}`);
+      return;
+    }
+    if (scope === "all" && !(await confirmDialog(t("mass.deleteAllConfirm"), { confirmLabel: t("mass.deleteNext"), danger: true }))) return;
+    const future = scope === "future";
+    const rows = await ctx.db.seriesMasses(series.id, { from: future ? mass.local_date : null });
+    const ids = await pickMasses(rows, {
+      title: t("mass.pickDeleteTitle"),
+      lead: future ? t("mass.pickFutureLead", { date: formatLongDate(mass.local_date) }) : t("mass.pickAllLead"),
+      cancelLabel: t("common.cancel"),
+      noneLabel: t(future ? "mass.pickEndOnly" : "mass.pickRemoveOnly")
+    });
+    if (!ids) return;
+    if (future) await ctx.db.updateSeries(series.id, { ends_on: shiftIso(mass.local_date, -1) });
+    await ctx.db.forgetOccurrences(series.id, rows.filter((row) => ids.includes(row.id)));
+    if (!future) await ctx.db.deleteSeries(series.id);
+    const kept = rows.length - ids.length;
+    const done = ids.length
+      ? t(future ? "mass.seriesEnded" : "mass.seriesRemoved", { count: ids.length })
+      : t(future ? "mass.seriesEndedOnly" : "mass.seriesRemovedOnly");
+    const keptNote = ids.length && kept ? ` ${t(future ? "mass.keptNote" : "mass.keptAsOnce", { kept })}` : "";
+    notify(done + keptNote, "success");
+    if (ids.includes(mass.id)) ctx.navigate(`#/date/${mass.local_date}`);
+    else ctx.refresh();
+  } catch (error) {
+    notify(errorMessage(error, "mass.deleteFailed"), "error");
+    ctx.refresh();
+  }
+}
+
 export async function renderMass(container, ctx, { id }) {
   const [mass, roles] = await Promise.all([ctx.db.mass(id), ctx.db.roles()]);
   if (!mass) {
@@ -531,21 +706,7 @@ export async function renderMass(container, ctx, { id }) {
         }
       }, t("mass.edit")),
       h("button", { type: "button", class: "ghost-button", onclick: () => openItemsEditor(ctx, mass, roles) }, t("mass.editItems")),
-      h("button", {
-        type: "button",
-        class: "ghost-button is-danger",
-        onclick: async () => {
-          const ok = await confirmDialog(t("mass.deleteConfirm", { title: massTitle(mass) }), { confirmLabel: t("common.delete"), danger: true });
-          if (!ok) return;
-          try {
-            await ctx.db.forgetOccurrence(mass);
-            notify(t("mass.deleted"), "success");
-            ctx.navigate(`#/date/${mass.local_date}`);
-          } catch (error) {
-            notify(errorMessage(error, "mass.deleteFailed"), "error");
-          }
-        }
-      }, t("mass.delete"))
+      h("button", { type: "button", class: "ghost-button is-danger", onclick: () => removeMass(ctx, mass) }, t("mass.delete"))
     )
   );
 
@@ -553,7 +714,7 @@ export async function renderMass(container, ctx, { id }) {
     ? h("ol", { class: "slot-list" },
         slots.map((slot) => {
           const role = roleById.get(slot.role_id);
-          const itemName = slot.display_name || roleLabel(role);
+          const itemName = slot.display_name || roleLabel(role) || t("mass.unnamedItem");
           return h("li", { class: "slot" },
             h("div", { class: "slot-head" },
               h("span", { class: "role-no num", text: String((role?.slot_no ?? 0) + 1).padStart(2, "0") }),

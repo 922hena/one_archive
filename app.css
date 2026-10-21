@@ -188,6 +188,13 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .special-mass { margin: -2px 0 10px; padding: 8px 10px 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--soft); }
 .special-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(110px, 150px); gap: 8px; margin-top: 6px; }
 .time-custom { margin-top: 6px; }
+.delete-scope { margin-top: 12px; }
+.pick-group { margin-top: 6px; }
+.pick-group .sub-head { margin-top: 14px; }
+.pick-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 2px; cursor: pointer; }
+.pick-row input { margin-top: 4px; width: 18px; height: 18px; flex: none; }
+.pick-row.is-disabled { cursor: default; color: var(--faint); }
+.pick-main { display: flex; flex-direction: column; min-width: 0; }
 .layout-items { margin: -2px 0 12px; }
 .recurrence-day { margin-top: 8px; }
 @media (max-width: 640px) {
@@ -290,8 +297,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 
 @media (max-width: 640px) {
-  .app-bar { gap: 10px; padding: 0 12px; }
+  .app-bar { flex-wrap: wrap; height: auto; column-gap: 10px; row-gap: 0; padding: 4px 12px 6px; }
+  .app-wordmark { line-height: 40px; }
+  .app-account { margin-left: auto; gap: 4px; }
   .app-account .meta { display: none; }
+  .app-nav { order: 3; flex-basis: 100%; }
   .app-nav a { padding: 6px 6px; }
   .app-main { padding: 28px 12px 72px; }
   .calendar-layout { margin-top: 28px; }

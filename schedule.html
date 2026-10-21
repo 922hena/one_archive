@@ -6,6 +6,8 @@
   <meta name="description" content="ONE ARCHIVE 회원가입과 로그인." />
   <meta name="theme-color" content="#f3f3f1" />
   <title>ONE ARCHIVE — 로그인</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body class="schedule-page">
@@ -47,9 +49,28 @@
             <div class="form-actions">
               <button id="login-button" class="primary-button" type="submit">로그인</button>
               <button id="signup-button" class="text-button" type="button">회원가입</button>
+              <button id="forgot-button" class="text-button" type="button">비밀번호를 잊으셨나요?</button>
             </div>
           </form>
           <p id="auth-message" class="notice" role="status" hidden></p>
+        </section>
+
+        <section id="reset-panel" class="panel-card" aria-labelledby="reset-title" hidden>
+          <h2 id="reset-title">새 비밀번호</h2>
+          <form id="reset-form">
+            <label class="field">
+              <span>새 비밀번호</span>
+              <input id="new-password" type="password" autocomplete="new-password" minlength="6" required />
+            </label>
+            <label class="field">
+              <span>새 비밀번호 확인</span>
+              <input id="new-password-check" type="password" autocomplete="new-password" minlength="6" required />
+            </label>
+            <div class="form-actions">
+              <button id="reset-button" class="primary-button" type="submit">새 비밀번호 저장</button>
+            </div>
+          </form>
+          <p id="reset-message" class="notice" role="status" hidden></p>
         </section>
 
         <section id="session-panel" class="panel-card" aria-labelledby="session-title" hidden>

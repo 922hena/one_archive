@@ -43,6 +43,37 @@ export function weeksAheadRange(startsOn, weeks = 16) {
   return { from: startsOn, to: end ?? startsOn };
 }
 
+export const OCCURRENCE_HORIZON_DAYS = 365;
+
+// Recurring Masses are written at most this far ahead; browsing later months creates nothing.
+export function occurrenceWindow(from, to, today, days = OCCURRENCE_HORIZON_DAYS) {
+  const limit = addUtcDays(today, days);
+  if (!limit || !parseIsoDate(from) || !parseIsoDate(to)) return null;
+  const end = to < limit ? to : limit;
+  return from <= end ? { from, to: end } : null;
+}
+
+// Liturgy is filled in later only for upcoming dates the member never edited.
+export function needsLiturgyRefresh(row, today) {
+  return sourceKey(row?.liturgy_source) === "unknown" && !row?.series_locked && String(row?.local_date ?? "") >= today;
+}
+
+export function offWeekday(rows, weekday) {
+  return rows.filter((row) => weekdayIndex(row.local_date) !== Number(weekday));
+}
+
+// Plain rows start selected; careful rows (linked Score or edited by hand) are picked one by one;
+// recorded rows have a performance record and the database refuses to delete them.
+export function deletionGroups(rows) {
+  const groups = { plain: [], careful: [], recorded: [] };
+  for (const row of rows) {
+    if (row.recorded) groups.recorded.push(row);
+    else if (row.linked || row.series_locked) groups.careful.push(row);
+    else groups.plain.push(row);
+  }
+  return groups;
+}
+
 export function liturgyFields(observance) {
   if (!observance) {
     return {

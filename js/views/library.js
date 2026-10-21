@@ -214,12 +214,13 @@ async function openDetails(ctx, score) {
         ? usage.map((entry) => {
             const slot = entry.mass_music_slots;
             const mass = slot?.mass_events;
-            const itemName = slot?.display_name || roleLabel(roleById.get(slot?.role_id));
+            const itemName = slot?.display_name || roleLabel(roleById.get(slot?.role_id)) || t("mass.unnamedItem");
+            if (!mass?.id) return h("li", { class: "list-row" }, h("span", { class: "list-main", text: itemName }));
             return h("li", { class: "list-row" },
-              h("a", { href: `#/mass/${mass?.id}`, class: "list-main", onclick: () => close() },
-                h("span", { class: "num", text: formatLongDate(mass?.local_date) }),
+              h("a", { href: `#/mass/${mass.id}`, class: "list-main", onclick: () => close() },
+                h("span", { class: "num", text: formatLongDate(mass.local_date) }),
                 " ",
-                [formatTime(mass?.start_time), mass?.title || t("mass.untitled"), itemName].filter(Boolean).join(" · ")
+                [formatTime(mass.start_time), mass.title || t("mass.untitled"), itemName].filter(Boolean).join(" · ")
               )
             );
           })

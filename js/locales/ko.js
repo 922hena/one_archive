@@ -9,7 +9,9 @@ export default {
     mass: "Mass",
     library: "Score Library",
     layouts: "Layout",
-    account: "계정"
+    account: "계정",
+    logout: "로그아웃",
+    logoutConfirm: "로그아웃할까요? 이 계정으로 로그인한 다른 기기(태블릿 등)도 곧 함께 로그아웃됩니다."
   },
   common: {
     loading: "불러오는 중…",
@@ -136,9 +138,10 @@ export default {
     recurrenceScope: "Apply changes",
     recurrenceThisOnly: "This Mass only",
     recurrenceFuture: "This and future Masses",
-    recurrenceStop: "Stop future dates",
-    recurrenceStopConfirm: "Future dates will stop. Past Masses and their scores stay.",
-    recurrenceStopped: "Future dates were stopped.",
+    recurrenceAll: "All Masses, including past",
+    recurrenceWeekdayHint: "To change the weekday, choose “This and future Masses”.",
+    recurrenceAllConfirm:
+      "지난 Mass까지 이름·시간·장소·Layout이 바뀝니다. ‘This Mass only’로 따로 고친 날짜는 그대로 두고, Score가 연결된 Mass의 음악 항목도 그대로 둡니다. 계속할까요?",
     seriesNeeded: "Recurrence needs a database update. Save as Once only, or apply the mass_series migration.",
     weekday: {
       0: "Sunday",
@@ -160,6 +163,42 @@ export default {
     deleteConfirm: "‘{title}’ Mass와 이 Mass의 연결 기록을 지웁니다. Score 원본은 Score Library에 그대로 남습니다.",
     deleted: "Mass를 삭제했습니다.",
     deleteFailed: "Mass를 삭제하지 못했습니다.",
+    deleteScopeTitle: "정기 Mass 삭제",
+    deleteScopeLead:
+      "‘{title}’은(는) 정기 Mass입니다. 어디까지 지울까요? 지운 Mass의 연결 기록도 지워지고, Score 원본은 Score Library에 남습니다.",
+    deleteScope: {
+      this: "이 Mass만",
+      future: "이 날짜부터 앞으로 (정기 Mass도 여기서 끝남)",
+      all: "지난 Mass 포함 전체 (정기 Mass 설정도 삭제)"
+    },
+    deleteNext: "다음",
+    deleteAllConfirm:
+      "지난 Mass까지 포함해 이 정기 Mass 전체를 지웁니다. 다음 화면에서 지울 Mass를 고를 수 있고, 연주 기록이 있는 Mass는 지워지지 않습니다. 계속할까요?",
+    pickDeleteTitle: "지울 Mass 고르기",
+    pickFutureLead:
+      "{date}부터 이 정기 Mass를 끝냅니다. 체크한 Mass와 그 연결 기록을 지웁니다. Score 원본은 Score Library에 남습니다.",
+    pickAllLead:
+      "이 정기 Mass 설정을 지웁니다. 체크한 Mass와 그 연결 기록을 지우고, 체크하지 않은 Mass는 한 번만 있는 Mass로 남습니다. Score 원본은 Score Library에 남습니다.",
+    pickPlainHead: "자동으로 만든 Mass ({count})",
+    pickCarefulHead: "Score가 연결되었거나 직접 고친 Mass ({count}) — 하나씩 골라 주세요",
+    pickRecordedHead: "연주 기록이 있어 지울 수 없는 Mass ({count})",
+    pickLinkedTag: "Score 연결",
+    pickEditedTag: "직접 수정",
+    pickDeleteButton: "고른 {count}개 삭제",
+    pickKeepAll: "모두 그대로 두기",
+    pickEndOnly: "Mass는 남기고 정기 Mass만 끝내기",
+    pickRemoveOnly: "Mass는 남기고 정기 Mass 설정만 지우기",
+    seriesEnded: "정기 Mass를 끝내고 Mass {count}개를 삭제했습니다.",
+    seriesEndedOnly: "정기 Mass를 끝냈습니다. Mass는 그대로 두었습니다.",
+    seriesRemoved: "정기 Mass 설정을 지우고 Mass {count}개를 삭제했습니다.",
+    seriesRemovedOnly: "정기 Mass 설정을 지웠습니다. 남은 Mass는 한 번만 있는 Mass가 되었습니다.",
+    keptNote: "{kept}개는 남겨 두었습니다.",
+    keptAsOnce: "남긴 {kept}개는 한 번만 있는 Mass가 되었습니다.",
+    oldWeekdayTitle: "기존 요일의 Mass",
+    oldWeekdayLead:
+      "{weekday}에 새 Mass를 만들었습니다. 기존 요일에 남아 있는 Mass {count}개 중 지울 것을 골라 주세요. 지운 Mass의 연결 기록도 지워지고, Score 원본은 Score Library에 남습니다.",
+    weekdayMoved: "요일을 바꿨습니다. 기존 요일 Mass {count}개를 삭제했습니다.",
+    weekdayMovedKept: "요일을 바꿨습니다. 기존 요일 Mass는 그대로 두었습니다.",
     notFound: "Mass를 찾을 수 없습니다. 삭제되었거나 다른 계정의 Mass입니다.",
     backToCalendar: "달력으로 돌아가기",
     backToDate: "‹ {date} Mass 목록",
@@ -172,6 +211,7 @@ export default {
     itemsSaveFailed: "음악 항목을 저장하지 못했습니다.",
     newScore: "New Score",
     newScoreFor: "New Score — {item}",
+    unnamedItem: "음악 항목",
     saveAndLink: "저장하고 연결",
     fromLibrary: "Score Library에서 연결",
     pickTitle: "Score Library에서 연결 — {item}",
@@ -341,6 +381,7 @@ export default {
     duplicate: "이미 같은 내용이 있습니다.",
     session: "로그인이 만료되었습니다. 다시 로그인해 주세요.",
     loadFailed: "화면을 불러오지 못했습니다.",
+    logoutFailed: "로그아웃하지 못했습니다. 다시 시도해 주세요.",
     config: "config.js의 Supabase 설정을 확인해 주세요."
   }
 };

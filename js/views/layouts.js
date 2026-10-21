@@ -139,7 +139,8 @@ export async function renderLayouts(container, ctx) {
           const items = [...(layout.user_mass_layout_items ?? [])].sort(
             (a, b) => (roleById.get(a.role_id)?.slot_no ?? 0) - (roleById.get(b.role_id)?.slot_no ?? 0)
           );
-          const names = items.map((item) => item.display_name || roleLabel(roleById.get(item.role_id)));
+          const names = items.map((item) => item.display_name || roleLabel(roleById.get(item.role_id))).filter(Boolean);
+          const updatedAt = formatDateTime(layout.updated_at);
           return h(
             "li",
             { class: "list-row" },
@@ -147,7 +148,7 @@ export async function renderLayouts(container, ctx) {
               h("strong", { text: layout.name }),
               h("span", { class: "meta", text: t("layouts.itemCount", { count: items.length }) }),
               h("p", { class: "meta clamp", text: names.join(" · ") }),
-              h("span", { class: "meta", text: t("layouts.updatedAt", { at: formatDateTime(layout.updated_at) }) })
+              updatedAt ? h("span", { class: "meta", text: t("layouts.updatedAt", { at: updatedAt }) }) : null
             ),
             h("div", { class: "row-actions" },
               h("button", { type: "button", class: "ghost-button", onclick: () => openLayoutForm(ctx, roles, layout) }, t("common.edit")),

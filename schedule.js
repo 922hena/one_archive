@@ -14,6 +14,13 @@ const logoutButton = document.querySelector("#logout-button");
 const accountLine = document.querySelector("#account-line");
 const sessionMessage = document.querySelector("#session-message");
 const appLink = document.querySelector("#app-link");
+const forgotButton = document.querySelector("#forgot-button");
+const resetPanel = document.querySelector("#reset-panel");
+const resetForm = document.querySelector("#reset-form");
+const resetButton = document.querySelector("#reset-button");
+const resetMessage = document.querySelector("#reset-message");
+const newPasswordInput = document.querySelector("#new-password");
+const newPasswordCheck = document.querySelector("#new-password-check");
 
 // Set when the app sent the member here; only app.html screens are accepted.
 const nextPath = safeNextPath(new URLSearchParams(window.location.search).get("next"));
@@ -32,13 +39,22 @@ function returnToApp() {
   return true;
 }
 
-const arrivedFromEmailLink = /(?:type=(?:signup|email|magiclink)|[?&#]code=)/.test(
-  `${window.location.hash}${window.location.search}`
-);
+// Read before the Supabase client clears the address.
+const arrivalUrl = `${window.location.hash}${window.location.search}`;
+const arrivedFromEmailLink = /(?:type=(?:signup|email|magiclink)|[?&#]code=)/.test(arrivalUrl);
+const arrivedFromBrokenLink = /[?&#]error(?:_code)?=/.test(arrivalUrl);
 
 let supabase = null;
 let authBusy = false;
 let emailLinkNoted = false;
+let recovering = /type=recovery/.test(arrivalUrl);
+
+// Mail links come back here and keep the screen the member was going to.
+function emailReturnUrl() {
+  const url = new URL("/schedule.html", window.location.origin);
+  if (nextPath) url.searchParams.set("next", nextPath);
+  return url.href;
+}
 
 function setNotice(element, text, tone) {
   element.textContent = text;
@@ -72,6 +88,7 @@ function setAuthBusy(busy) {
   authBusy = busy;
   loginButton.disabled = busy;
   signupButton.disabled = busy;
+  forgotButton.disabled = busy;
   emailInput.disabled = busy;
   passwordInput.disabled = busy;
 }
@@ -79,6 +96,7 @@ function setAuthBusy(busy) {
 function lockAuthForm() {
   loginButton.disabled = true;
   signupButton.disabled = true;
+  forgotButton.disabled = true;
   emailInput.disabled = true;
   passwordInput.disabled = true;
 }
@@ -90,11 +108,22 @@ function showSignedOut() {
   logoutButton.hidden = true;
   authPanel.hidden = false;
   sessionPanel.hidden = true;
+  resetPanel.hidden = true;
   setNotice(sessionMessage, "", "info");
+}
+
+function showRecovery() {
+  authPanel.hidden = true;
+  sessionPanel.hidden = true;
+  accountLine.hidden = true;
+  logoutButton.hidden = true;
+  resetPanel.hidden = false;
+  newPasswordInput.focus();
 }
 
 function showSignedIn(user) {
   authPanel.hidden = true;
+  resetPanel.hidden = true;
   sessionPanel.hidden = false;
   accountLine.hidden = false;
   logoutButton.hidden = false;
@@ -117,12 +146,24 @@ function koreanAuthError(error, action) {
   if (code === "invalid_credentials" || message.includes("invalid login credentials")) {
     return "이메일 또는 비밀번호가 올바르지 않습니다.";
   }
+  if (code.includes("rate_limit") || message.includes("rate limit") || message.includes("security purposes")) {
+    return "요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.";
+  }
   if (message.includes("password") && message.includes("6")) {
     return "비밀번호는 6자 이상이어야 합니다.";
+  }
+  if (code === "weak_password") {
+    return "쉽게 추측되거나 유출된 적 있는 비밀번호입니다. 다른 비밀번호를 정해 주세요.";
   }
   if (action === "signup" && (code === "user_already_exists" || message.includes("already"))) {
     return "이미 가입된 이메일입니다. 로그인해 주세요.";
   }
+  if (action === "update") {
+    if (code === "same_password") return "지금 쓰는 비밀번호와 다른 비밀번호를 정해 주세요.";
+    if (message.includes("session")) return "재설정 링크가 만료되었습니다. 비밀번호 재설정 메일을 다시 받아 주세요.";
+    return "새 비밀번호를 저장하지 못했습니다. 다시 시도해 주세요.";
+  }
+  if (action === "reset") return "재설정 메일을 보내지 못했습니다. 이메일 주소를 확인한 뒤 다시 시도해 주세요.";
   return action === "signup"
     ? "회원가입을 완료하지 못했습니다. 입력 내용을 확인한 뒤 다시 시도해 주세요."
     : "로그인하지 못했습니다. 이메일과 비밀번호를 확인해 주세요.";
@@ -133,11 +174,10 @@ async function signUp() {
   setAuthBusy(true);
   setNotice(authMessage, "", "info");
   try {
-    const emailRedirectTo = new URL("/schedule.html", window.location.origin).href;
     const { data, error } = await supabase.auth.signUp({
       email: emailInput.value.trim(),
       password: passwordInput.value,
-      options: { emailRedirectTo }
+      options: { emailRedirectTo: emailReturnUrl() }
     });
     if (error) {
       setNotice(authMessage, koreanAuthError(error, "signup"), "info");
@@ -173,6 +213,63 @@ async function signIn(event) {
     setNotice(authMessage, "서버에 연결하지 못했습니다. 주소를 확인한 뒤 다시 시도해 주세요.", "info");
   } finally {
     setAuthBusy(false);
+  }
+}
+
+async function sendPasswordReset() {
+  if (!supabase || authBusy) return;
+  const email = emailInput.value.trim();
+  if (!email || !emailInput.checkValidity()) {
+    setNotice(authMessage, "비밀번호를 다시 정할 계정의 이메일을 먼저 입력해 주세요.", "info");
+    emailInput.focus();
+    return;
+  }
+  setAuthBusy(true);
+  setNotice(authMessage, "", "info");
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: emailReturnUrl() });
+    if (error) {
+      setNotice(authMessage, koreanAuthError(error, "reset"), "info");
+      return;
+    }
+    setNotice(
+      authMessage,
+      "가입된 이메일이면 비밀번호 재설정 메일이 갑니다. 메일의 링크를 누르면 새 비밀번호를 정할 수 있습니다.",
+      "success"
+    );
+  } catch {
+    setNotice(authMessage, "서버에 연결하지 못했습니다. 주소를 확인한 뒤 다시 시도해 주세요.", "info");
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+async function saveNewPassword(event) {
+  event.preventDefault();
+  if (!supabase || resetButton.disabled || !resetForm.reportValidity()) return;
+  if (newPasswordInput.value !== newPasswordCheck.value) {
+    setNotice(resetMessage, "두 칸의 비밀번호가 같지 않습니다.", "info");
+    newPasswordCheck.focus();
+    return;
+  }
+  resetButton.disabled = true;
+  setNotice(resetMessage, "", "info");
+  try {
+    const { data, error } = await supabase.auth.updateUser({ password: newPasswordInput.value });
+    if (error) {
+      setNotice(resetMessage, koreanAuthError(error, "update"), "info");
+      return;
+    }
+    recovering = false;
+    newPasswordInput.value = "";
+    newPasswordCheck.value = "";
+    if (nextPath && returnToApp()) return;
+    showSignedIn(data.user);
+    setNotice(sessionMessage, "새 비밀번호를 저장했습니다. 다음부터 새 비밀번호로 로그인해 주세요.", "success");
+  } catch {
+    setNotice(resetMessage, "서버에 연결하지 못했습니다. 다시 시도해 주세요.", "info");
+  } finally {
+    resetButton.disabled = false;
   }
 }
 
@@ -218,8 +315,19 @@ function boot() {
 
   supabase.auth.onAuthStateChange((event, session) => {
     const user = session?.user ?? null;
+    if (event === "PASSWORD_RECOVERY") recovering = true;
     if (!user) {
+      recovering = false;
       showSignedOut();
+      if (arrivedFromBrokenLink && !emailLinkNoted) {
+        emailLinkNoted = true;
+        setNotice(authMessage, "메일 링크가 만료되었거나 이미 사용되었습니다. 필요한 메일을 다시 받아 주세요.", "info");
+      }
+      return;
+    }
+    // A reset link signs the member in; the new password comes first.
+    if (recovering) {
+      showRecovery();
       return;
     }
     if (nextPath && returnToApp()) return;
@@ -229,5 +337,7 @@ function boot() {
 
 authForm.addEventListener("submit", signIn);
 signupButton.addEventListener("click", signUp);
+forgotButton.addEventListener("click", sendPasswordReset);
+resetForm.addEventListener("submit", saveNewPassword);
 logoutButton.addEventListener("click", signOut);
 boot();
