@@ -1,6 +1,7 @@
 import { SCORE_BUCKET } from "./supabase.js";
 import { compareMasses } from "./format.js";
 import { comparePages } from "./pages.js";
+import { liturgyFields, occurrenceDates } from "./recurrence.js";
 
 export const SIGNED_URL_SECONDS = 300;
 
@@ -24,6 +25,11 @@ async function run(query) {
 function normalizeName(value) {
   const text = String(value ?? "").trim();
   return text ? text : null;
+}
+
+function isMissingRelation(error) {
+  const message = String(error?.message ?? "").toLowerCase();
+  return error?.code === "42P01" || error?.code === "PGRST205" || message.includes("schema cache") || message.includes("mass_series");
 }
 
 function sortFiles(score) {
@@ -120,6 +126,148 @@ export function createDb(supabase) {
 
   function deleteMass(id) {
     return run(supabase.from("mass_events").delete().eq("id", id));
+  }
+
+  async function forgetOccurrence(mass) {
+    if (mass?.series_id) {
+      const { error } = await supabase.from("mass_series_skips").insert({
+        series_id: mass.series_id,
+        skip_date: mass.local_date
+      });
+      if (error && error.code !== "23505" && !isMissingRelation(error)) throw error;
+    }
+    await deleteMass(mass.id);
+  }
+
+  function seriesRows() {
+    return run(
+      supabase
+        .from("mass_series")
+        .select("id,title,start_time,venue_name,layout_id,weekday,interval_weeks,starts_on,ends_on")
+    );
+  }
+
+  async function series(id) {
+    if (!id) return null;
+    try {
+      return await run(supabase.from("mass_series").select("*").eq("id", id).maybeSingle());
+    } catch (error) {
+      if (isMissingRelation(error)) return null;
+      throw error;
+    }
+  }
+
+  function createSeries(fields) {
+    return run(supabase.from("mass_series").insert(fields).select("id").single());
+  }
+
+  function updateSeries(id, fields) {
+    return run(supabase.from("mass_series").update(fields).eq("id", id));
+  }
+
+  function deleteSeries(id) {
+    return run(supabase.from("mass_series").delete().eq("id", id));
+  }
+
+  async function usedVenues() {
+    const names = new Set();
+    const masses = await run(supabase.from("mass_events").select("venue_name").limit(300));
+    for (const row of masses) if (row.venue_name?.trim()) names.add(row.venue_name.trim());
+    try {
+      const seriesVenues = await run(supabase.from("mass_series").select("venue_name").limit(300));
+      for (const row of seriesVenues) if (row.venue_name?.trim()) names.add(row.venue_name.trim());
+    } catch (error) {
+      if (!isMissingRelation(error)) throw error;
+    }
+    return [...names].sort((a, b) => a.localeCompare(b, "ko"));
+  }
+
+  async function ensureOccurrences(from, to) {
+    let series;
+    try {
+      series = await seriesRows();
+    } catch (error) {
+      if (isMissingRelation(error)) return;
+      throw error;
+    }
+    const active = series.filter((item) => !item.ends_on || item.ends_on >= from);
+    if (!active.length) return;
+
+    const [observances, skips, layoutRows] = await Promise.all([
+      observancesBetween(from, to),
+      run(supabase.from("mass_series_skips").select("series_id,skip_date").gte("skip_date", from).lte("skip_date", to)),
+      layouts()
+    ]);
+    const observanceByDate = new Map();
+    for (const row of observances) if (!observanceByDate.has(row.calendar_date)) observanceByDate.set(row.calendar_date, row);
+    const skipSet = new Set(skips.map((row) => `${row.series_id}:${row.skip_date}`));
+    const layoutById = new Map(layoutRows.map((layout) => [layout.id, layout]));
+
+    for (const item of active) {
+      const dates = occurrenceDates(item, from, to).filter((date) => !skipSet.has(`${item.id}:${date}`));
+      if (!dates.length) continue;
+      const existing = await run(
+        supabase.from("mass_events").select("local_date").eq("series_id", item.id).gte("local_date", from).lte("local_date", to)
+      );
+      const have = new Set(existing.map((row) => row.local_date));
+      const slots = (layoutById.get(item.layout_id)?.user_mass_layout_items ?? []).map((slot) => ({
+        role_id: slot.role_id,
+        display_name: slot.display_name
+      }));
+      for (const date of dates) {
+        if (have.has(date)) continue;
+        try {
+          await createMass(
+            {
+              local_date: date,
+              title: item.title,
+              start_time: item.start_time,
+              venue_name: item.venue_name,
+              layout_id: item.layout_id,
+              notes: null,
+              series_id: item.id,
+              series_locked: false,
+              ...liturgyFields(observanceByDate.get(date) ?? null)
+            },
+            slots
+          );
+        } catch (error) {
+          if (error?.code !== "23505") throw error;
+        }
+      }
+    }
+  }
+
+  async function syncFutureMasses(seriesId, fromDate, patch, layoutItems) {
+    const rows = await run(
+      supabase
+        .from("mass_events")
+        .select("id,mass_music_slots(id,role_id,display_name,mass_music_entries(id))")
+        .eq("series_id", seriesId)
+        .eq("series_locked", false)
+        .gte("local_date", fromDate)
+    );
+    for (const row of rows) {
+      await updateMass(row.id, patch);
+      const linked = (row.mass_music_slots ?? []).some((slot) => (slot.mass_music_entries ?? []).length);
+      if (!linked && layoutItems) await saveSlots(row.id, layoutItems, row.mass_music_slots ?? []);
+    }
+  }
+
+  async function endSeries(seriesId, lastDate) {
+    await updateSeries(seriesId, { ends_on: lastDate });
+    const later = await run(
+      supabase
+        .from("mass_events")
+        .select("id,series_locked,mass_music_slots(id,mass_music_entries(id))")
+        .eq("series_id", seriesId)
+        .gt("local_date", lastDate)
+    );
+    for (const row of later) {
+      const linked = (row.mass_music_slots ?? []).some((slot) => (slot.mass_music_entries ?? []).length);
+      if (row.series_locked || linked) continue;
+      await deleteMass(row.id);
+    }
   }
 
   async function saveSlots(massId, wanted, existing) {
@@ -320,6 +468,15 @@ export function createDb(supabase) {
     createMass,
     updateMass,
     deleteMass,
+    forgetOccurrence,
+    series,
+    createSeries,
+    updateSeries,
+    deleteSeries,
+    usedVenues,
+    ensureOccurrences,
+    syncFutureMasses,
+    endSeries,
     saveSlots,
     layouts,
     createLayout,

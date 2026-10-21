@@ -2,8 +2,15 @@ import { t } from "../i18n.js";
 import { formatDateTime } from "../format.js";
 import { h, createDialog, confirmDialog, errorMessage, notify, setBusy } from "../ui.js";
 
+export function roleLabel(role) {
+  if (!role) return "";
+  if (role.code === "entrance" && role.name_ko === "입당") return "입당성가";
+  return role.name_ko ?? "";
+}
+
 // Checklist of the 18 fixed music items. selected: Map(role_id -> display_name|null)
-export function roleChecklist(roles, { selected = new Map(), locked = new Set() } = {}) {
+export function roleChecklist(roles, { selected = new Map(), locked = new Set(), labels = {} } = {}) {
+  const text = { hint: "roles.hint", selectAll: "roles.selectAll", clearAll: "roles.clearAll", ...labels };
   const rows = roles.map((role) => {
     const isLocked = locked.has(role.id);
     const checkbox = h("input", { type: "checkbox", checked: selected.has(role.id) || isLocked, disabled: isLocked });
@@ -11,9 +18,9 @@ export function roleChecklist(roles, { selected = new Map(), locked = new Set() 
       type: "text",
       class: "role-rename",
       maxlength: 100,
-      placeholder: role.name_ko,
+      placeholder: roleLabel(role),
       value: selected.get(role.id) ?? "",
-      "aria-label": t("roles.renameLabel", { name: role.name_ko })
+      "aria-label": t("roles.renameLabel", { name: roleLabel(role) })
     });
     nameInput.disabled = !checkbox.checked;
     checkbox.addEventListener("change", () => {
@@ -25,7 +32,7 @@ export function roleChecklist(roles, { selected = new Map(), locked = new Set() 
       h("label", { class: "role-toggle" },
         checkbox,
         h("span", { class: "role-no", text: String(role.slot_no + 1).padStart(2, "0") }),
-        h("span", { class: "role-name" }, role.name_ko, h("small", { text: role.name_la ?? "" }))
+        h("span", { class: "role-name" }, roleLabel(role), h("small", { text: role.name_la ?? "" }))
       ),
       nameInput,
       isLocked ? h("small", { class: "role-lock", text: t("roles.locked") }) : null
@@ -46,9 +53,9 @@ export function roleChecklist(roles, { selected = new Map(), locked = new Set() 
     "div",
     { class: "role-checklist" },
     h("div", { class: "role-tools" },
-      h("span", { class: "hint", text: t("roles.hint") }),
-      h("button", { type: "button", class: "link-button", onclick: () => setAll(true) }, t("roles.selectAll")),
-      h("button", { type: "button", class: "link-button", onclick: () => setAll(false) }, t("roles.clearAll"))
+      h("span", { class: "hint", text: text.hint ? t(text.hint) : "" }),
+      h("button", { type: "button", class: "link-button", onclick: () => setAll(true) }, t(text.selectAll)),
+      h("button", { type: "button", class: "link-button", onclick: () => setAll(false) }, t(text.clearAll))
     ),
     rows.map((row) => row.element)
   );
@@ -132,7 +139,7 @@ export async function renderLayouts(container, ctx) {
           const items = [...(layout.user_mass_layout_items ?? [])].sort(
             (a, b) => (roleById.get(a.role_id)?.slot_no ?? 0) - (roleById.get(b.role_id)?.slot_no ?? 0)
           );
-          const names = items.map((item) => item.display_name || roleById.get(item.role_id)?.name_ko || "");
+          const names = items.map((item) => item.display_name || roleLabel(roleById.get(item.role_id)));
           return h(
             "li",
             { class: "list-row" },

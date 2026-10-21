@@ -7,6 +7,7 @@ import { openViewer } from "./viewer.js";
 import { openPageEditor } from "./page-editor.js";
 import { fileProblemMessage, pageRow, photoSourceButtons } from "./page-list.js";
 import { openPhotoEditor } from "./photo-editor.js";
+import { roleLabel } from "./layouts.js";
 
 const FILE_ACCEPT = "application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png";
 
@@ -213,7 +214,7 @@ async function openDetails(ctx, score) {
         ? usage.map((entry) => {
             const slot = entry.mass_music_slots;
             const mass = slot?.mass_events;
-            const itemName = slot?.display_name || roleById.get(slot?.role_id)?.name_ko || "";
+            const itemName = slot?.display_name || roleLabel(roleById.get(slot?.role_id));
             return h("li", { class: "list-row" },
               h("a", { href: `#/mass/${mass?.id}`, class: "list-main", onclick: () => close() },
                 h("span", { class: "num", text: formatLongDate(mass?.local_date) }),

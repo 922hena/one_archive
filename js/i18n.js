@@ -30,7 +30,10 @@ export function t(key, params = {}) {
   let text = lookup(dictionaries[currentLocale], key);
   if (typeof text !== "string") text = lookup(dictionaries[FALLBACK_LOCALE], key);
   if (typeof text !== "string") return key;
-  return text.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match));
+  return text.replace(/\{(\w+)\}/g, (match, name) => {
+    if (!(name in params) || params[name] == null) return name in params ? "" : match;
+    return String(params[name]);
+  });
 }
 
 export function translateDom(root = document) {

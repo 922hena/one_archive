@@ -175,6 +175,24 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .sheet-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); position: sticky; bottom: 0; background: #fff; }
 .sheet-message { margin: 0; }
 .dialog-date { margin: 0 0 10px; color: var(--muted); }
+.mass-form { display: flex; flex-direction: column; gap: 2px; }
+.mass-form .field { margin-bottom: 8px; }
+.mass-form .dialog-date { margin: 0 0 4px; color: var(--ink); font-weight: 700; }
+.mass-form .field select,
+.mass-form .field input:not([type="checkbox"]):not([type="radio"]),
+.mass-form .field textarea { min-height: 40px; }
+.mass-form .form-liturgy .liturgy-line { margin: 0; }
+.field-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 22px; }
+.field-head label, .field-head .field-label { margin: 0; font-size: 0.8rem; color: var(--muted); font-weight: 600; }
+.field-head .link-button { padding: 0 2px; font-size: 0.82rem; }
+.special-mass { margin: -2px 0 10px; padding: 8px 10px 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--soft); }
+.special-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(110px, 150px); gap: 8px; margin-top: 6px; }
+.time-custom { margin-top: 6px; }
+.layout-items { margin: -2px 0 12px; }
+.recurrence-day { margin-top: 8px; }
+@media (max-width: 640px) {
+  .special-fields { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
 
 .field { display: flex; flex-direction: column; gap: 4px; margin: 0 0 12px; min-width: 0; border: 0; padding: 0; }
 .field > span, .field legend, .field-label { font-size: 0.8rem; color: var(--muted); font-weight: 600; }
@@ -186,7 +204,6 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .choices legend { margin-bottom: 6px; }
 .choice { display: flex; align-items: center; gap: 8px; padding: 4px 0; cursor: pointer; }
-.manual-liturgy { margin: 6px 0 0 24px; }
 /* page lists (upload + page editor) */
 .page-list { list-style: none; margin: 8px 0; padding: 0; border: 1px solid var(--line); border-radius: var(--radius); }
 .page-list > li { border-bottom: 1px solid var(--line); }

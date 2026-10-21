@@ -7,12 +7,12 @@
 
 insert into public.liturgical_roles (code, slot_no, name_ko, name_la, name_en) values
   ('prelude',                     0, '전주',                   'Praeludium',               'Prelude'),
-  ('entrance',                    1, '입당',                   'Introitus',                'Entrance'),
+  ('entrance',                    1, '입당성가',                'Introitus',                'Entrance'),
   ('kyrie',                       2, '자비송',                 'Kyrie',                    'Kyrie'),
   ('gloria',                      3, '대영광송',               'Gloria',                   'Gloria'),
   ('responsorial_psalm',          4, '화답송',                 'Psalmus responsorius',     'Responsorial Psalm'),
   ('gospel_acclamation',          5, '복음환호송',             'Alleluia',                 'Gospel Acclamation'),
-  ('universal_prayer_response',   6, '보편지향기도응답',       'Oratio universalis',       'Universal Prayer Response'),
+  ('universal_prayer_response',   6, '보편지향기도 응답',       'Oratio universalis',       'Universal Prayer Response'),
   ('offertory',                   7, '봉헌성가',               'Offertorium',              'Offertory'),
   ('sanctus',                     8, '거룩하시도다',           'Sanctus',                  'Sanctus'),
   ('mystery_of_faith',            9, '신앙의 신비여',          'Mysterium fidei',          'Mystery of Faith'),

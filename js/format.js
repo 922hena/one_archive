@@ -108,6 +108,23 @@ export function formatTime(value) {
   return match ? `${match[1]}:${match[2]}` : "";
 }
 
+export function hourValue(hour) {
+  return `${pad2(hour)}:00`;
+}
+
+export function formatHourLabel(hour) {
+  if (hour === 12) return "12:00 noon";
+  if (hour < 12) return `${hour}:00 AM`;
+  return `${hour - 12}:00 PM`;
+}
+
+export function isHourChoice(value) {
+  const match = /^(\d{2}):00/.exec(String(value ?? ""));
+  if (!match) return false;
+  const hour = Number(match[1]);
+  return hour >= 6 && hour <= 23;
+}
+
 export function formatDateTime(value, timeZone = APP_TIME_ZONE) {
   if (!value) return "";
   const date = new Date(value);

@@ -74,7 +74,7 @@ function calendarCard(ctx, { year, month, selected, today, observancesByDate, ma
   );
 }
 
-function dayPanel(ctx, { selected, observances, masses, roles, layouts }) {
+function dayPanel(ctx, { selected, observances, masses, roles, layouts, venues }) {
   const liturgy = observances.length
     ? observances.map((observance) => liturgyLine(observance.name_ko, observance.color_code))
     : [liturgyLine(null, null)];
@@ -93,7 +93,7 @@ function dayPanel(ctx, { selected, observances, masses, roles, layouts }) {
                 h("span", { class: "meta", text: [
                   liturgyLabel(mass.celebration_name, mass.color_code) || t("liturgy.unknown"),
                   mass.venue_name,
-                  mass.status !== "planned" ? t(`mass.status.${mass.status}`) : null
+                  mass.status && mass.status !== "planned" ? t(`mass.status.${mass.status}`) : null
                 ].filter(Boolean).join(" · ") })
               ),
               h("span", { class: "meta num", text: t("calendar.itemSummary", { items: slots.length, linked }) })
@@ -101,7 +101,7 @@ function dayPanel(ctx, { selected, observances, masses, roles, layouts }) {
           );
         })
       )
-    : h("p", { class: "empty", text: t("calendar.noMasses") });
+    : null;
 
   return h("section", { class: "day-panel" },
     h("h1", { class: "date-title num", text: formatLongDate(selected) }),
@@ -118,7 +118,7 @@ function dayPanel(ctx, { selected, observances, masses, roles, layouts }) {
         type: "button",
         class: "solid-button",
         onclick: async () => {
-          const savedId = await openMassForm(ctx, { date: selected, observances, roles, layouts });
+          const savedId = await openMassForm(ctx, { date: selected, observances, roles, layouts, venues });
           if (savedId) {
             notify(t("mass.created"), "success");
             ctx.navigate(`#/mass/${savedId}`);
@@ -138,12 +138,14 @@ export async function renderCalendar(container, ctx, { date }) {
   const gridStart = gridWeeks[0][0].iso;
   const gridEnd = gridWeeks[gridWeeks.length - 1][6].iso;
 
-  const [observances, massDates, masses, roles, layouts] = await Promise.all([
+  await ctx.db.ensureOccurrences(gridStart, gridEnd);
+  const [observances, massDates, masses, roles, layouts, venues] = await Promise.all([
     ctx.db.observancesBetween(gridStart, gridEnd),
     ctx.db.massDatesBetween(gridStart, gridEnd),
     ctx.db.massesOn(selected),
     ctx.db.roles(),
-    ctx.db.layouts()
+    ctx.db.layouts(),
+    ctx.db.usedVenues()
   ]);
   const observancesByDate = groupBy(observances, "calendar_date");
   const massesByDate = groupBy(massDates, "local_date");
@@ -151,7 +153,7 @@ export async function renderCalendar(container, ctx, { date }) {
   container.append(
     h("div", { class: "calendar-layout" },
       calendarCard(ctx, { year, month, selected, today, observancesByDate, massesByDate }),
-      dayPanel(ctx, { selected, observances: observancesByDate.get(selected) ?? [], masses, roles, layouts })
+      dayPanel(ctx, { selected, observances: observancesByDate.get(selected) ?? [], masses, roles, layouts, venues })
     )
   );
 }
