@@ -2,7 +2,7 @@
 export default {
   app: {
     skip: "본문으로 바로가기",
-    home: "ONE ARCHIVE Home",
+    home: "YEAR SCORE Home",
     nav: "Main menu"
   },
   home: {

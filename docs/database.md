@@ -1,9 +1,9 @@
-# ONE ARCHIVE — 데이터베이스 설계서 (Database Design)
+# YEAR SCORE — 데이터베이스 설계서 (Database Design)
 
 > **Version:** 0.3.0 · PRD v0.6 연계 / 미사 음악 17슬롯·악보 Quick Add/연주용 버전·페달·시각·시드 후보 통합  
 > **Status:** `PROPOSED` — 단, **1단계 범위는 2026-10-21 Supabase에 적용됨** (아래 §31 "1단계 구현 현황" 참조)  
 > **기준 문서:** 프로젝트 최상위 `PRD.md` **v0.6.0** (v0.4 대비 추가 요구사항은 🟢/🔵로 식별)  
-> **대상:** Cursor 개발 에이전트, ONE ARCHIVE 운영자  
+> **대상:** Cursor 개발 에이전트, YEAR SCORE 운영자  
 > **언어:** 한국어 설명 + 영문 테이블명·컬럼명·기술 용어  
 > **작성 원칙:** 요구사항을 데이터 관계와 검증 기준으로 해석한 **제안**이다. 현재 Supabase에 이 테이블들이 있다는 뜻이 아니다.
 
@@ -477,7 +477,7 @@ hymnals ──< hymnal_entries >── works [optional, 곡 식별 체계 고려
 
 ---
 
-## 10. 교집합 검색 설계 — ONE ARCHIVE 최우선 [P0]
+## 10. 교집합 검색 설계 — YEAR SCORE 최우선 [P0]
 
 > **이 영역은 PRD `SRCH-001`~`SRCH-005`, `CORE-005/006/009`의 직접 구현 기준이다.** 별도 벡터 DB나 AI부터 구축하지 않는다.
 

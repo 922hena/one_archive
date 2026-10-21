@@ -1,9 +1,9 @@
 ---
-description: ONE ARCHIVE 디자인 통일 규칙. 신규 UI와 기존 화면 스타일 수정에 적용한다.
+description: YEAR SCORE 디자인 통일 규칙. 신규 UI와 기존 화면 스타일 수정에 적용한다.
 alwaysApply: true
 ---
 
-ONE ARCHIVE UI를 수정하거나 생성하기 전에 `docs/design-system.md`를 읽고 준수한다.
+YEAR SCORE UI를 수정하거나 생성하기 전에 `docs/design-system.md`를 읽고 준수한다.
 
 핵심 시각 규칙:
 - Pretendard; Onyx Black #0B0B0D; Text Graphite #3F4450; White #FFFFFF; border #E9EAEC.

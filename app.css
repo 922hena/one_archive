@@ -1,5 +1,5 @@
 :root {
-  /* ONE ARCHIVE design system v1.1 (docs/design-system.md) */
+  /* YEAR SCORE design system v1.1 (docs/design-system.md) */
   --oa-black: #0B0B0D;
   --oa-text: #3F4450;
   --oa-muted: #858B94;
@@ -337,7 +337,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 
 /* ==========================================================================
-   ONE ARCHIVE design system v1.1 — Black & White, Pretendard, 24px / 40px
+   YEAR SCORE design system v1.1 — Black & White, Pretendard, 24px / 40px
    ========================================================================== */
 body.app-page { font-size: 14px; line-height: 21px; letter-spacing: -0.015em; color: var(--oa-text); }
 h1, h2, h3 { color: var(--oa-black); letter-spacing: -0.015em; }
