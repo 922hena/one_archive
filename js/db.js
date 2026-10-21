@@ -1,5 +1,6 @@
 import { SCORE_BUCKET } from "./supabase.js";
 import { compareMasses } from "./format.js";
+import { comparePages } from "./pages.js";
 
 export const SIGNED_URL_SECONDS = 300;
 
@@ -26,7 +27,7 @@ function normalizeName(value) {
 }
 
 function sortFiles(score) {
-  if (Array.isArray(score?.score_files)) score.score_files.sort((a, b) => a.page_no - b.page_no);
+  if (Array.isArray(score?.score_files)) score.score_files.sort(comparePages);
   return score;
 }
 
@@ -286,6 +287,30 @@ export function createDb(supabase) {
     return data.signedUrl;
   }
 
+  async function download(path) {
+    const { data, error } = await supabase.storage.from(SCORE_BUCKET).download(path);
+    if (error) throw error;
+    return data;
+  }
+
+  async function scoreFiles(scoreId) {
+    const rows = await run(supabase.from("score_files").select(FILE_FIELDS).eq("owned_score_id", scoreId));
+    return rows.sort(comparePages);
+  }
+
+  async function setPageNumbers(changes) {
+    for (const change of changes) {
+      await run(supabase.from("score_files").update({ page_no: change.page_no }).eq("id", change.id));
+    }
+  }
+
+  // Record first: the storage delete policy only allows files no record points to.
+  async function removeScoreFiles(files) {
+    if (!files.length) return;
+    await run(supabase.from("score_files").delete().in("id", files.map((file) => file.id)));
+    await supabase.storage.from(SCORE_BUCKET).remove(files.map((file) => file.storage_path));
+  }
+
   return {
     roles,
     observancesBetween,
@@ -306,6 +331,10 @@ export function createDb(supabase) {
     deleteScore,
     linkScore,
     unlink,
-    signedUrl
+    signedUrl,
+    download,
+    scoreFiles,
+    setPageNumbers,
+    removeScoreFiles
   };
 }

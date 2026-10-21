@@ -2,6 +2,11 @@ import { t } from "../i18n.js";
 import { formatBytes, formatDateTime, formatLongDate, formatTime, formatZonedDate } from "../format.js";
 import { uploadScore, validateFile, detectMime, cleanupStaleUploads, MAX_FILE_BYTES } from "../upload.js";
 import { h, createDialog, confirmDialog, errorMessage, notify, setBusy, displayScoreTitle } from "../ui.js";
+import { isImageScore, moveItem } from "../pages.js";
+import { openViewer } from "./viewer.js";
+import { openPageEditor } from "./page-editor.js";
+import { fileProblemMessage, pageRow, photoSourceButtons } from "./page-list.js";
+import { openPhotoEditor } from "./photo-editor.js";
 
 const FILE_ACCEPT = "application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png";
 
@@ -13,83 +18,51 @@ function fileSummary(files = []) {
     : t("library.imageSummary", { count: files.length });
 }
 
-// Opens a short-lived signed URL. The tab is opened before awaiting so popup blockers allow it.
-async function openFile(ctx, file) {
-  const tab = window.open("about:blank", "_blank");
-  try {
-    const url = await ctx.db.signedUrl(file.storage_path);
-    if (tab) {
-      tab.opener = null;
-      tab.location.href = url;
-    } else {
-      window.location.href = url;
-    }
-  } catch (error) {
-    tab?.close();
-    notify(errorMessage(error, "library.openFailed"), "error");
-  }
-}
-
-export function openScore(ctx, score) {
-  const files = score.score_files ?? [];
-  if (files.length === 1) {
-    openFile(ctx, files[0]);
-    return;
-  }
-  const { body, footer, close } = createDialog(displayScoreTitle(score));
-  body.append(
-    h("p", { class: "hint", text: t("library.pagesHint") }),
-    h(
-      "ul",
-      { class: "plain-list compact" },
-      files.map((file) =>
-        h("li", { class: "list-row" },
-          h("span", { class: "num", text: t("library.pageNo", { page: file.page_no }) }),
-          h("span", { class: "list-main meta", text: file.original_filename ?? "" }),
-          h("button", { type: "button", class: "ghost-button", onclick: () => openFile(ctx, file) }, t("common.open"))
-        )
-      )
-    )
-  );
-  footer.append(h("button", { type: "button", class: "ghost-button", onclick: close }, t("common.close")));
-}
-
-function problemMessage(problem, name) {
-  if (problem === "type") return t("upload.badType", { name });
-  if (problem === "size") return t("upload.tooLarge", { name, limit: formatBytes(MAX_FILE_BYTES) });
-  return t("upload.emptyFile", { name });
-}
-
 // options.onSaved(scoreId) runs after a successful upload (e.g. link to a music item).
 export function openUploadDialog(ctx, { title = t("upload.title"), saveLabel = t("common.save"), onSaved } = {}) {
-  const { body, footer, close, setStatus } = createDialog(title, { wide: true });
-  const pending = [];
+  const { dialog, body, footer, close, setStatus } = createDialog(title, { wide: true });
+  let pending = [];
   const titleInput = h("input", { type: "text", maxlength: 200, placeholder: t("upload.titlePlaceholder") });
   const composerInput = h("input", { type: "text", maxlength: 200, placeholder: t("upload.composerPlaceholder") });
-  const fileInput = h("input", { type: "file", accept: FILE_ACCEPT, multiple: true, hidden: true });
-  const cameraInput = h("input", { type: "file", accept: "image/*", capture: "environment", hidden: true });
-  const pendingList = h("ol", { class: "pending-list" });
+  const pendingList = h("ol", { class: "page-list" });
   const progress = h("p", { class: "hint", role: "status" });
+
+  function isPdf(file) {
+    return detectMime(file) === "application/pdf";
+  }
+
+  async function edit(item) {
+    const edited = await openPhotoEditor(item.file);
+    if (!edited || edited === item.file || !dialog.isConnected) return;
+    URL.revokeObjectURL(item.url);
+    item.file = edited;
+    item.url = URL.createObjectURL(edited);
+    item.edited = true;
+    renderPending();
+  }
 
   function renderPending() {
     pendingList.replaceChildren(
-      ...pending.map((file, index) =>
-        h("li", { class: "list-row" },
-          h("span", { class: "num", text: t("library.pageNo", { page: index + 1 }) }),
-          h("span", { class: "list-main" }, file.name || t("upload.cameraPhoto"), h("small", { class: "meta", text: ` ${formatBytes(file.size)}` })),
-          h(
-            "button",
-            {
-              type: "button",
-              class: "link-button",
-              onclick: () => {
-                pending.splice(index, 1);
-                renderPending();
-              }
-            },
-            t("common.remove")
-          )
-        )
+      ...pending.map((item, index) =>
+        pageRow({
+          index,
+          total: pending.length,
+          thumbUrl: item.url,
+          isPdf: isPdf(item.file),
+          name: item.file.name || t("upload.cameraPhoto"),
+          meta: formatBytes(item.file.size),
+          badge: item.edited ? t("editor.edited") : null,
+          onMove: (from, to) => {
+            pending = moveItem(pending, from, to);
+            renderPending();
+          },
+          onEdit: isPdf(item.file) ? null : () => edit(item),
+          onRemove: () => {
+            if (item.url) URL.revokeObjectURL(item.url);
+            pending.splice(index, 1);
+            renderPending();
+          }
+        })
       )
     );
     if (!pending.length) pendingList.append(h("li", { class: "empty", text: t("upload.noneSelected") }));
@@ -99,20 +72,15 @@ export function openUploadDialog(ctx, { title = t("upload.title"), saveLabel = t
     const problems = [];
     for (const file of fileList) {
       const problem = validateFile(file);
-      if (problem) problems.push(problemMessage(problem, file.name || t("upload.cameraPhoto")));
-      else pending.push(file);
+      if (problem) problems.push(fileProblemMessage(problem, file.name || t("upload.cameraPhoto")));
+      else pending.push({ file, url: isPdf(file) ? null : URL.createObjectURL(file), edited: false });
     }
     setStatus(problems.join(" "));
     renderPending();
   }
 
-  fileInput.addEventListener("change", () => {
-    addFiles([...fileInput.files]);
-    fileInput.value = "";
-  });
-  cameraInput.addEventListener("change", () => {
-    addFiles([...cameraInput.files]);
-    cameraInput.value = "";
+  dialog.addEventListener("close", () => {
+    for (const item of pending) if (item.url) URL.revokeObjectURL(item.url);
   });
 
   body.append(
@@ -121,12 +89,7 @@ export function openUploadDialog(ctx, { title = t("upload.title"), saveLabel = t
       h("label", { class: "field" }, h("span", { text: t("upload.composer") }), composerInput)
     ),
     h("p", { class: "hint", text: t("upload.optionalHint") }),
-    h("div", { class: "button-row" },
-      h("button", { type: "button", class: "ghost-button", onclick: () => fileInput.click() }, t("upload.chooseFile")),
-      h("button", { type: "button", class: "ghost-button", onclick: () => cameraInput.click() }, t("upload.takePhoto")),
-      fileInput,
-      cameraInput
-    ),
+    photoSourceButtons({ accept: FILE_ACCEPT, onFiles: addFiles, setStatus }),
     h("p", { class: "hint", text: t("upload.rules", { limit: formatBytes(MAX_FILE_BYTES) }) }),
     pendingList,
     progress
@@ -142,8 +105,8 @@ export function openUploadDialog(ctx, { title = t("upload.title"), saveLabel = t
       setStatus(t("upload.noneSelected"));
       return;
     }
-    const mixed = pending.some((file) => detectMime(file) === "application/pdf") && pending.length > 1;
-    if (mixed) {
+    const files = pending.map((item) => item.file);
+    if (files.some(isPdf) && files.length > 1) {
       setStatus(t("upload.pdfAlone"));
       return;
     }
@@ -154,7 +117,7 @@ export function openUploadDialog(ctx, { title = t("upload.title"), saveLabel = t
       scoreId = await uploadScore(
         ctx.supabase,
         ctx.user.id,
-        pending,
+        files,
         { title: titleInput.value, composerName: composerInput.value },
         (current, total) => {
           progress.textContent = t("upload.progress", { current, total });
@@ -317,8 +280,13 @@ export async function renderLibrary(container, ctx) {
             h("td", { "data-label": t("library.colLinks"), class: "is-num num", text: linkCount ? String(linkCount) : "–" }),
             h("td", { "data-label": t("library.colCreated"), class: "num", text: formatZonedDate(score.created_at) }),
             h("td", { class: "is-actions" },
-              h("button", { type: "button", class: "link-button", onclick: () => openScore(ctx, score) }, t("common.open")),
+              h("button", { type: "button", class: "link-button", onclick: () => openViewer(ctx, score) }, t("common.open")),
               h("button", { type: "button", class: "link-button", onclick: () => openEditScore(ctx, score) }, t("common.edit")),
+              h("button", {
+                type: "button",
+                class: "link-button",
+                onclick: () => (isImageScore(score.score_files) ? openPageEditor(ctx, score) : notify(t("pages.pdfLater")))
+              }, t("pages.edit")),
               h("button", { type: "button", class: "link-button", onclick: () => openDetails(ctx, score) }, t("library.details")),
               deleteButton
             )

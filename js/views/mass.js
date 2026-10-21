@@ -2,7 +2,8 @@ import { t } from "../i18n.js";
 import { formatLongDate, formatTime, liturgyLabel, colorSwatch, sortBySlotNo } from "../format.js";
 import { h, createDialog, confirmDialog, errorMessage, notify, setBusy, colorDot, displayScoreTitle } from "../ui.js";
 import { roleChecklist, layoutSelection } from "./layouts.js";
-import { openUploadDialog, openScore } from "./library.js";
+import { openUploadDialog } from "./library.js";
+import { openViewer } from "./viewer.js";
 
 const SEASONS = ["advent", "christmas", "ordinary", "lent", "easter"];
 const COLORS = ["green", "white", "violet", "red", "rose"];
@@ -255,7 +256,7 @@ function entryRow(ctx, entry, itemName) {
       score?.composer_name ? h("span", { class: "meta", text: score.composer_name }) : null
     ),
     h("div", { class: "row-actions" },
-      h("button", { type: "button", class: "link-button", onclick: () => openScore(ctx, score) }, t("common.open")),
+      h("button", { type: "button", class: "link-button", onclick: () => openViewer(ctx, score) }, t("common.open")),
       h(
         "button",
         {

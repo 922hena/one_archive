@@ -1,4 +1,5 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+import { safeNextPath } from "./js/return-to.js";
 
 const setupMessage = document.querySelector("#setup-message");
 const authPanel = document.querySelector("#auth-panel");
@@ -12,6 +13,24 @@ const signupButton = document.querySelector("#signup-button");
 const logoutButton = document.querySelector("#logout-button");
 const accountLine = document.querySelector("#account-line");
 const sessionMessage = document.querySelector("#session-message");
+const appLink = document.querySelector("#app-link");
+
+// Set when the app sent the member here; only app.html screens are accepted.
+const nextPath = safeNextPath(new URLSearchParams(window.location.search).get("next"));
+if (nextPath && appLink) appLink.href = nextPath;
+
+// One automatic return per few seconds, so this page and the app can never bounce back and forth.
+function returnToApp() {
+  try {
+    const last = Number(sessionStorage.getItem("oneArchiveReturnAt") || 0);
+    if (Date.now() - last < 5000) return false;
+    sessionStorage.setItem("oneArchiveReturnAt", String(Date.now()));
+  } catch {
+    // storage unavailable: still return once
+  }
+  window.location.replace(nextPath);
+  return true;
+}
 
 const arrivedFromEmailLink = /(?:type=(?:signup|email|magiclink)|[?&#]code=)/.test(
   `${window.location.hash}${window.location.search}`
@@ -203,6 +222,7 @@ function boot() {
       showSignedOut();
       return;
     }
+    if (nextPath && returnToApp()) return;
     showSignedIn(user);
   });
 }

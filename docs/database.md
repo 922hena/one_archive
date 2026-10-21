@@ -1108,8 +1108,8 @@ User UI prefs: saved_views | sort_preferences | format_preferences | page_turn_s
 | 개인 | `user_mass_layouts`, `user_mass_layout_items` | 구현됨(미사틀). 미사에는 복사만 하며, 미사틀을 지우면 `mass_events.layout_id`만 비워짐 |
 | 개인 | `mass_events` | 구현됨. 같은 날 여러 미사 허용, 전례 명칭·색·시기를 복사 보관, `liturgy_source` = `official`/`user`/`unknown` |
 | 개인 | `mass_music_slots` | 구현됨. `UNIQUE(mass_event_id, role_id)`, 미사별 표시 이름 |
-| 개인 | `owned_scores` | 구현됨. `title`·`composer_name` 선택, `provisional_title` 필수, `status` = `uploading`/`ready`, `created_at` 변경 불가(트리거), `last_edited_at`은 제목·작곡가 변경 시에만 갱신(트리거) |
-| 개인 | `score_files` | 구현됨(§7.3 `score_assets`의 1단계 축소판). 경로 `{user_id}/{score_id}/{file_id}.{ext}`를 CHECK로 강제, UPDATE 권한 없음 |
+| 개인 | `owned_scores` | 구현됨. `title`·`composer_name` 선택, `provisional_title` 필수, `status` = `uploading`/`ready`, `created_at` 변경 불가(트리거), `last_edited_at`은 제목·작곡가 변경과 페이지 추가·삭제·순서 변경 시에만 갱신(트리거, §31.5) |
+| 개인 | `score_files` | 구현됨(§7.3 `score_assets`의 1단계 축소판). 경로 `{user_id}/{score_id}/{file_id}.{ext}`를 CHECK로 강제, UPDATE는 `page_no`만 허용(§31.5) |
 | 개인 | `mass_music_entries` | 구현됨. **미사 항목(slot) 1개 + 악보 1개**를 잇는 연결 기록 |
 | 개인 | `performance_confirmations` | 빈 표. 화면 없음. 연결해도 행이 생기지 않음(연주 횟수 0 유지) |
 
@@ -1131,3 +1131,15 @@ User UI prefs: saved_views | sort_preferences | format_preferences | page_turn_s
 
 - 테스트 계정 2개로 `node --test tests/phase1-api.test.mjs`(시나리오·권한 자동 시험) 실행.
 - 성능 점검 INFO: `user_id` 단독 외래키 7개에 인덱스 없음(복합 인덱스로 대부분 커버, 회원 삭제 시에만 영향). 필요하면 승인 후 인덱스 추가.
+
+### 31.5 보완: 사진 Score 페이지 순서 변경 (2026-10-21, `20261021120000_score_page_order.sql`)
+
+사용자 승인 후 적용했다. 기존 표·행은 바꾸지 않고 권한·정책·트리거만 **추가**했다.
+
+- **권한:** `grant update (page_no) on score_files to authenticated` — 열 단위 권한이라 경로·크기·형식 등 다른 열은 바꿀 수 없다.
+- **정책:** `score_files_update_own` — 본인 행만 UPDATE(`user_id = (select auth.uid())`).
+- **트리거:** `score_files_touch_score`(AFTER INSERT/DELETE/UPDATE OF `page_no`) → 그 악보가 `status='ready'`일 때만 `owned_scores.last_edited_at = now()`. 처음 올리는 중(`uploading`)에 쪽을 넣을 때는 수정 시각이 바뀌지 않는다. 회원이 `last_edited_at`을 직접 바꾸는 것은 여전히 막힌다(`pg_trigger_depth() > 1`일 때만 허용).
+- **앱의 저장 순서:** 새 쪽 올리기 → 쪽 번호 고치기(바뀐 행만) → 뺀 쪽 지우기(행 먼저, 파일 나중). 앞 단계가 실패하면 뒤 단계는 실행하지 않으므로 기존 쪽이 먼저 사라지는 일은 없다. 새 쪽 올리기가 중간에 실패하면 그때 넣은 행과 파일만 되돌린다.
+- **알려진 한계:** 행을 지운 뒤 Storage 파일 삭제가 실패하면 파일만 남는다(화면에는 보이지 않음, 용량만 차지). 나중에 정리 작업으로 처리한다.
+- **범위:** 사진 Score만. PDF 쪽 편집, 저장 후 회전·자르기는 아직 없다(회전·자르기는 "새 파일로 바꾸고 원본 삭제" 방식으로 하기로 했고, 만들기 전에 다시 확인한다).
+- **검증(실제 DB, 되돌리기 전용 블록):** 올리는 중 넣기·상태 변경은 수정 시각 유지, 직접 변경 차단, `page_no` 변경·쪽 추가·삭제 시 갱신, 경로·크기 변경 거부, 악보 삭제 시 연쇄 삭제 정상, 남은 시험 행 0개.
