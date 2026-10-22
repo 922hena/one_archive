@@ -19,9 +19,9 @@ async function showAccountLink() {
   dot.className = signedIn ? "account-dot is-on" : "account-dot is-off";
   dot.setAttribute("aria-hidden", "true");
   link.href = signedIn ? "app.html" : LOGIN_PAGE;
-  link.replaceChildren("로그인", dot);
+  link.replaceChildren("Log in", dot);
   // The dot is color only, so the state is also spelled out for screen readers and hover.
-  const state = signedIn ? "로그인됨 · Mass·Score로 이동" : "로그인 안 됨 · 로그인하기";
+  const state = signedIn ? "Signed in · Go to Missa·Score" : "Not signed in · Log in";
   link.setAttribute("aria-label", state);
   link.title = state;
   link.hidden = false;

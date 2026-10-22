@@ -1,7 +1,7 @@
-import ko from "./locales/ko.js";
+import en from "./locales/en.js";
 
-const FALLBACK_LOCALE = "ko";
-const dictionaries = { ko };
+const FALLBACK_LOCALE = "en";
+const dictionaries = { en };
 let currentLocale = FALLBACK_LOCALE;
 
 function lookup(dictionary, key) {

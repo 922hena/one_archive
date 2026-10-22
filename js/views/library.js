@@ -174,8 +174,8 @@ async function openDetails(ctx, score) {
   const usageList = h("ul", { class: "plain-list compact" }, h("li", { class: "meta", text: t("common.loading") }));
   body.append(
     h("dl", { class: "detail-grid" },
-      h("dt", { text: t("library.scoreTitle") }), h("dd", { text: displayScoreTitle(score) }),
-      h("dt", { text: t("library.provisionalLabel") }), h("dd", { text: score.provisional_title }),
+      h("dt", { text: t("library.scoreTitle") }), h("dd", { translate: "no", text: displayScoreTitle(score) }),
+      h("dt", { text: t("library.provisionalLabel") }), h("dd", { translate: "no", text: score.provisional_title }),
       h("dt", { text: t("library.createdAt") }), h("dd", { class: "num", text: formatDateTime(score.created_at) }),
       h("dt", { text: t("library.lastEditedAt") }), h("dd", { class: "num", text: formatDateTime(score.last_edited_at) })
     ),
@@ -192,7 +192,7 @@ async function openDetails(ctx, score) {
       h("tbody", {}, files.map((file) =>
         h("tr", {},
           h("td", { class: "num", text: String(file.page_no) }),
-          h("td", { text: file.original_filename ?? "" }),
+          h("td", { translate: "no", text: file.original_filename ?? "" }),
           h("td", { text: file.mime_type === "application/pdf" ? "PDF" : file.mime_type === "image/png" ? "PNG" : "JPG" }),
           h("td", { class: "is-num num", text: formatBytes(file.byte_size) })
         )
@@ -215,12 +215,12 @@ async function openDetails(ctx, score) {
             const slot = entry.mass_music_slots;
             const mass = slot?.mass_events;
             const itemName = slot?.display_name || roleLabel(roleById.get(slot?.role_id)) || t("mass.unnamedItem");
-            if (!mass?.id) return h("li", { class: "list-row" }, h("span", { class: "list-main", text: itemName }));
+            if (!mass?.id) return h("li", { class: "list-row" }, h("span", { class: "list-main", translate: "no", text: itemName }));
             return h("li", { class: "list-row" },
               h("a", { href: `#/mass/${mass.id}`, class: "list-main", onclick: () => close() },
-                h("span", { class: "num", text: formatLongDate(mass.local_date) }),
+                h("span", { class: "num", lang: "ko", text: formatLongDate(mass.local_date) }),
                 " ",
-                [formatTime(mass.start_time), mass.title || t("mass.untitled"), itemName].filter(Boolean).join(" · ")
+                h("span", { translate: "no", text: [formatTime(mass.start_time), mass.title || t("mass.untitled"), itemName].filter(Boolean).join(" · ") })
               )
             );
           })
@@ -276,8 +276,8 @@ export async function renderLibrary(container, ctx) {
             t("common.delete")
           );
           return h("tr", {},
-            h("td", { "data-label": t("library.colTitle") }, h("strong", { text: displayScoreTitle(score) })),
-            h("td", { "data-label": t("library.colComposer"), text: score.composer_name ?? "" }),
+            h("td", { "data-label": t("library.colTitle") }, h("strong", { translate: "no", text: displayScoreTitle(score) })),
+            h("td", { "data-label": t("library.colComposer"), translate: "no", text: score.composer_name ?? "" }),
             h("td", { "data-label": t("library.colFiles"), text: fileSummary(score.score_files) }),
             h("td", { "data-label": t("library.colLinks"), class: "is-num num", text: linkCount ? String(linkCount) : "–" }),
             h("td", { "data-label": t("library.colCreated"), class: "num", text: formatZonedDate(score.created_at) }),

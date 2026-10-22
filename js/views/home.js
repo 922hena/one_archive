@@ -18,7 +18,7 @@ function groupBy(rows, key) {
 function liturgyBlock(observances) {
   if (!observances.length) return [h("p", { class: "today-liturgy is-unknown", text: t("liturgy.unknown") })];
   return observances.map((observance) =>
-    h("p", { class: "today-liturgy" },
+    h("p", { class: "today-liturgy", lang: "ko" },
       colorDot(observance.color_code, colorSwatch(observance.color_code)),
       h("span", { text: observance.name_ko }),
       observance.color_code ? h("span", { class: "color-chip", text: colorAbbr(observance.color_code) }) : null
@@ -35,8 +35,8 @@ function todayArea({ selected, today, observances, masses }) {
             h("a", { href: `#/mass/${mass.id}`, class: "list-row is-link" },
               h("span", { class: "time num", text: formatTime(mass.start_time) || t("calendar.noTime") }),
               h("div", { class: "list-main" },
-                h("strong", { text: massTitle(mass) }),
-                mass.venue_name ? h("span", { class: "meta", text: mass.venue_name }) : null
+                h("strong", { translate: "no", text: massTitle(mass) }),
+                mass.venue_name ? h("span", { class: "meta", translate: "no", text: mass.venue_name }) : null
               )
             )
           )
@@ -46,7 +46,7 @@ function todayArea({ selected, today, observances, masses }) {
 
   return h("div", { class: "today-area" },
     h("p", { class: "today-label", text: selected === today ? t("home.today") : t("home.selected") }),
-    h("p", { class: "today-date num", text: formatLongDate(selected) }),
+    h("p", { class: "today-date num", lang: "ko", text: formatLongDate(selected) }),
     liturgyBlock(observances),
     source
       ? h("p", { class: "source" },

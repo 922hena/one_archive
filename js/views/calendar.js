@@ -34,7 +34,7 @@ export function calendarCard(ctx, { year, month, selected, today, observancesByD
 
   const top = h("div", { class: "cal-top" },
     heading ? h("h2", { class: "cal-title", text: heading }) : null,
-    h("span", { class: "cal-year num", "aria-hidden": "true", text: t("format.yearTitle", { year }) })
+    h("span", { class: "cal-year num", lang: "ko", "aria-hidden": "true", text: t("format.yearTitle", { year }) })
   );
 
   // Same 7 columns as the date grid, so the month sits exactly above Wednesday.
@@ -43,14 +43,14 @@ export function calendarCard(ctx, { year, month, selected, today, observancesByD
       h("a", { href: monthLink(previous), class: "icon-button", "aria-label": t("calendar.previousMonth") }, "‹"),
       h("a", { href: monthLink(next), class: "icon-button", "aria-label": t("calendar.nextMonth") }, "›")
     ),
-    h("h2", { class: "cal-month num" },
+    h("h2", { class: "cal-month num", lang: "ko" },
       h("span", { class: "visually-hidden", text: `${t("format.yearTitle", { year })} ` }),
       t("format.monthOnly", { month })
     ),
     h("a", { href: `#/${base}/${today}`, class: "ghost-button cal-today" }, t("calendar.today"))
   );
 
-  const weekdays = h("div", { class: "cal-row cal-weekdays", "aria-hidden": "true" },
+  const weekdays = h("div", { class: "cal-row cal-weekdays", lang: "ko", "aria-hidden": "true" },
     [0, 1, 2, 3, 4, 5, 6].map((index) => h("span", { class: index === 0 ? "is-sunday" : "", text: weekdayShort(index) }))
   );
 
@@ -67,7 +67,7 @@ export function calendarCard(ctx, { year, month, selected, today, observancesByD
         const label = [
           formatLongDate(cell.iso),
           observances.map((observance) => liturgyLabel(observance.name_ko, observance.color_code)).join(", "),
-          massCount ? t("calendar.massCount", { count: massCount }) : ""
+          massCount ? t(massCount === 1 ? "calendar.massCountOne" : "calendar.massCount", { count: massCount }) : ""
         ].filter(Boolean).join(", ");
         return h("a", { href: `#/${base}/${cell.iso}`, class: classes.join(" "), "aria-label": label, "aria-current": cell.iso === selected ? "date" : null },
           h("span", { class: "cal-num num", text: String(cell.day) }),
@@ -103,12 +103,16 @@ function dayPanel(ctx, { selected, observances, masses, roles, layouts, venues }
             h("a", { href: `#/mass/${mass.id}`, class: "list-row is-link" },
               h("span", { class: "time num", text: formatTime(mass.start_time) || t("calendar.noTime") }),
               h("div", { class: "list-main" },
-                h("strong", { text: massTitle(mass) }),
-                h("span", { class: "meta", text: [
-                  liturgyLabel(mass.celebration_name, mass.color_code) || t("liturgy.unknown"),
-                  mass.venue_name,
-                  mass.status && mass.status !== "planned" ? t(`mass.status.${mass.status}`) : null
-                ].filter(Boolean).join(" · ") })
+                h("strong", { translate: "no", text: massTitle(mass) }),
+                h("span", { class: "meta" },
+                  [
+                    mass.celebration_name
+                      ? h("span", { lang: "ko", text: liturgyLabel(mass.celebration_name, mass.color_code) })
+                      : t("liturgy.unknown"),
+                    mass.venue_name ? h("span", { translate: "no", text: mass.venue_name }) : null,
+                    mass.status && mass.status !== "planned" ? t(`mass.status.${mass.status}`) : null
+                  ].filter(Boolean).flatMap((part, index) => (index ? [" · ", part] : [part]))
+                )
               ),
               h("span", { class: "meta num", text: t("calendar.itemSummary", { items: slots.length, linked }) })
             )
@@ -118,7 +122,7 @@ function dayPanel(ctx, { selected, observances, masses, roles, layouts, venues }
     : null;
 
   return h("section", { class: "day-panel" },
-    h("h2", { class: "date-title num", text: formatLongDate(selected) }),
+    h("h2", { class: "date-title num", lang: "ko", text: formatLongDate(selected) }),
     liturgy,
     source
       ? h("p", { class: "source" },

@@ -47,7 +47,7 @@ export function pageRow({ index, total, thumbUrl, isPdf = false, name, meta, bad
     h("span", { class: "page-no num", text: t("library.pageNo", { page: index + 1 }) }),
     thumb,
     h("span", { class: "list-main" },
-      h("span", { class: "page-name", text: name }),
+      h("span", { class: "page-name", translate: "no", text: name }),
       h("small", { class: "meta" }, badge ? h("span", { class: "badge", text: badge }) : null, meta ?? "")
     ),
     h("span", { class: "page-actions" },

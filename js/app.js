@@ -52,7 +52,7 @@ async function route(ctx) {
 }
 
 async function boot() {
-  setLocale("ko");
+  setLocale("en");
   translateDom();
   const supabase = createAppClient();
   if (!supabase) {

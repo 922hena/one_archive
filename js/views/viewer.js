@@ -77,7 +77,7 @@ export function openViewer(ctx, score) {
     "dialog",
     { class: "viewer", "aria-label": displayScoreTitle(score) },
     h("div", { class: "viewer-bar" },
-      h("strong", { class: "viewer-title", text: displayScoreTitle(score) }),
+      h("strong", { class: "viewer-title", translate: "no", text: displayScoreTitle(score) }),
       counter,
       h("button", { type: "button", class: "viewer-tool", onclick: () => openOriginal(ctx, pages[index]?.file ?? files[0]) }, t("viewer.original")),
       fullscreenButton,

@@ -1,10 +1,10 @@
 import { t } from "../i18n.js";
 import { h, confirmDialog, errorMessage, notify, setBusy } from "../ui.js";
 
+// Music items are shown in Latin; Korean and English names stay in the data for search.
 export function roleLabel(role) {
   if (!role) return "";
-  if (role.code === "entrance" && role.name_ko === "입당") return "입당성가";
-  return role.name_ko ?? "";
+  return role.name_la || role.name_en || role.name_ko || "";
 }
 
 // Checklist of the 18 fixed music items (Latin names). selected: Map(role_id -> display_name|null)
@@ -13,7 +13,7 @@ export function roleChecklist(roles, { selected = new Map(), locked = new Set(),
   const text = { hint: "roles.hint", selectAll: "roles.selectAll", clearAll: "roles.clearAll", ...labels };
   const rows = roles.map((role) => {
     const isLocked = locked.has(role.id);
-    const primary = role.name_la || roleLabel(role);
+    const primary = roleLabel(role);
     const checkbox = h("input", {
       type: "checkbox",
       checked: selected.has(role.id) || isLocked,
@@ -37,7 +37,7 @@ export function roleChecklist(roles, { selected = new Map(), locked = new Set(),
       { class: checkbox.checked ? "role-row" : "role-row is-off" },
       h("label", { class: "role-check" }, checkbox),
       h("span", { class: "role-no num", text: String(role.slot_no + 1).padStart(2, "0") }),
-      h("span", { class: "role-name" }, primary, role.name_la ? h("small", { text: roleLabel(role) }) : null),
+      h("span", { class: "role-name", translate: "no", text: primary }),
       nameInput,
       isLocked ? h("small", { class: "role-lock", text: t("roles.locked") }) : null
     );
@@ -98,7 +98,7 @@ export async function renderLayouts(container, ctx) {
   const select = h(
     "select",
     { "aria-label": t("layouts.choose") },
-    layouts.map((item) => h("option", { value: item.id, selected: item.id === layout?.id }, item.name)),
+    layouts.map((item) => h("option", { value: item.id, selected: item.id === layout?.id, translate: "no" }, item.name)),
     h("option", { value: NEW_LAYOUT, selected: !layout }, t("layouts.newOption"))
   );
   const nameInput = h("input", {

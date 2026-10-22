@@ -127,46 +127,46 @@ function showSignedIn(user) {
   sessionPanel.hidden = false;
   accountLine.hidden = false;
   logoutButton.hidden = false;
-  accountLine.textContent = user.email ? `${user.email} 님으로 로그인했습니다.` : "로그인했습니다.";
+  accountLine.textContent = user.email ? `Signed in as ${user.email}.` : "Signed in.";
   if (arrivedFromEmailLink && !emailLinkNoted) {
     emailLinkNoted = true;
-    setNotice(sessionMessage, "이메일 확인이 완료되어 로그인되었습니다.", "success");
+    setNotice(sessionMessage, "Your email is confirmed and you are signed in.", "success");
   }
 }
 
-function koreanAuthError(error, action) {
+function authErrorText(error, action) {
   const code = String(error?.code ?? "");
   const message = String(error?.message ?? "").toLowerCase();
   if (message.includes("failed to fetch") || message.includes("network")) {
-    return "서버에 연결하지 못했습니다. 주소를 확인한 뒤 다시 시도해 주세요.";
+    return "Couldn't reach the server. Check the address and try again.";
   }
   if (code === "email_not_confirmed" || message.includes("email not confirmed")) {
-    return "이메일 확인이 필요합니다. 받은 메일의 링크를 누른 뒤 다시 로그인해 주세요.";
+    return "Please confirm your email first. Click the link in the email we sent, then log in again.";
   }
   if (code === "invalid_credentials" || message.includes("invalid login credentials")) {
-    return "이메일 또는 비밀번호가 올바르지 않습니다.";
+    return "The email or password is incorrect.";
   }
   if (code.includes("rate_limit") || message.includes("rate limit") || message.includes("security purposes")) {
-    return "요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.";
+    return "Too many requests. Please wait a moment and try again.";
   }
   if (message.includes("password") && message.includes("6")) {
-    return "비밀번호는 6자 이상이어야 합니다.";
+    return "The password must be at least 6 characters.";
   }
   if (code === "weak_password") {
-    return "쉽게 추측되거나 유출된 적 있는 비밀번호입니다. 다른 비밀번호를 정해 주세요.";
+    return "This password is easy to guess or has been leaked before. Please choose another one.";
   }
   if (action === "signup" && (code === "user_already_exists" || message.includes("already"))) {
-    return "이미 가입된 이메일입니다. 로그인해 주세요.";
+    return "This email is already registered. Please log in.";
   }
   if (action === "update") {
-    if (code === "same_password") return "지금 쓰는 비밀번호와 다른 비밀번호를 정해 주세요.";
-    if (message.includes("session")) return "재설정 링크가 만료되었습니다. 비밀번호 재설정 메일을 다시 받아 주세요.";
-    return "새 비밀번호를 저장하지 못했습니다. 다시 시도해 주세요.";
+    if (code === "same_password") return "Choose a password different from your current one.";
+    if (message.includes("session")) return "The reset link has expired. Please request a new password reset email.";
+    return "Couldn't save the new password. Please try again.";
   }
-  if (action === "reset") return "재설정 메일을 보내지 못했습니다. 이메일 주소를 확인한 뒤 다시 시도해 주세요.";
+  if (action === "reset") return "Couldn't send the reset email. Check the email address and try again.";
   return action === "signup"
-    ? "회원가입을 완료하지 못했습니다. 입력 내용을 확인한 뒤 다시 시도해 주세요."
-    : "로그인하지 못했습니다. 이메일과 비밀번호를 확인해 주세요.";
+    ? "Couldn't complete signup. Check what you entered and try again."
+    : "Couldn't log in. Check your email and password.";
 }
 
 async function signUp() {
@@ -180,15 +180,15 @@ async function signUp() {
       options: { emailRedirectTo: emailReturnUrl() }
     });
     if (error) {
-      setNotice(authMessage, koreanAuthError(error, "signup"), "info");
+      setNotice(authMessage, authErrorText(error, "signup"), "info");
       return;
     }
     if (!data.session) {
       passwordInput.value = "";
-      setNotice(authMessage, "확인 메일을 보냈습니다. 메일의 링크를 누른 뒤 로그인해 주세요.", "success");
+      setNotice(authMessage, "We sent a confirmation email. Click the link in it, then log in.", "success");
     }
   } catch {
-    setNotice(authMessage, "서버에 연결하지 못했습니다. 주소를 확인한 뒤 다시 시도해 주세요.", "info");
+    setNotice(authMessage, "Couldn't reach the server. Check the address and try again.", "info");
   } finally {
     setAuthBusy(false);
   }
@@ -205,12 +205,12 @@ async function signIn(event) {
       password: passwordInput.value
     });
     if (error) {
-      setNotice(authMessage, koreanAuthError(error, "login"), "info");
+      setNotice(authMessage, authErrorText(error, "login"), "info");
       return;
     }
     passwordInput.value = "";
   } catch {
-    setNotice(authMessage, "서버에 연결하지 못했습니다. 주소를 확인한 뒤 다시 시도해 주세요.", "info");
+    setNotice(authMessage, "Couldn't reach the server. Check the address and try again.", "info");
   } finally {
     setAuthBusy(false);
   }
@@ -220,7 +220,7 @@ async function sendPasswordReset() {
   if (!supabase || authBusy) return;
   const email = emailInput.value.trim();
   if (!email || !emailInput.checkValidity()) {
-    setNotice(authMessage, "비밀번호를 다시 정할 계정의 이메일을 먼저 입력해 주세요.", "info");
+    setNotice(authMessage, "First enter the email of the account whose password you want to reset.", "info");
     emailInput.focus();
     return;
   }
@@ -229,16 +229,16 @@ async function sendPasswordReset() {
   try {
     const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: emailReturnUrl() });
     if (error) {
-      setNotice(authMessage, koreanAuthError(error, "reset"), "info");
+      setNotice(authMessage, authErrorText(error, "reset"), "info");
       return;
     }
     setNotice(
       authMessage,
-      "가입된 이메일이면 비밀번호 재설정 메일이 갑니다. 메일의 링크를 누르면 새 비밀번호를 정할 수 있습니다.",
+      "If this email is registered, a password reset email is on its way. Click the link in it to set a new password.",
       "success"
     );
   } catch {
-    setNotice(authMessage, "서버에 연결하지 못했습니다. 주소를 확인한 뒤 다시 시도해 주세요.", "info");
+    setNotice(authMessage, "Couldn't reach the server. Check the address and try again.", "info");
   } finally {
     setAuthBusy(false);
   }
@@ -248,7 +248,7 @@ async function saveNewPassword(event) {
   event.preventDefault();
   if (!supabase || resetButton.disabled || !resetForm.reportValidity()) return;
   if (newPasswordInput.value !== newPasswordCheck.value) {
-    setNotice(resetMessage, "두 칸의 비밀번호가 같지 않습니다.", "info");
+    setNotice(resetMessage, "The two passwords don't match.", "info");
     newPasswordCheck.focus();
     return;
   }
@@ -257,7 +257,7 @@ async function saveNewPassword(event) {
   try {
     const { data, error } = await supabase.auth.updateUser({ password: newPasswordInput.value });
     if (error) {
-      setNotice(resetMessage, koreanAuthError(error, "update"), "info");
+      setNotice(resetMessage, authErrorText(error, "update"), "info");
       return;
     }
     recovering = false;
@@ -265,9 +265,9 @@ async function saveNewPassword(event) {
     newPasswordCheck.value = "";
     if (nextPath && returnToApp()) return;
     showSignedIn(data.user);
-    setNotice(sessionMessage, "새 비밀번호를 저장했습니다. 다음부터 새 비밀번호로 로그인해 주세요.", "success");
+    setNotice(sessionMessage, "New password saved. Use it the next time you log in.", "success");
   } catch {
-    setNotice(resetMessage, "서버에 연결하지 못했습니다. 다시 시도해 주세요.", "info");
+    setNotice(resetMessage, "Couldn't reach the server. Please try again.", "info");
   } finally {
     resetButton.disabled = false;
   }
@@ -278,9 +278,9 @@ async function signOut() {
   logoutButton.disabled = true;
   try {
     const { error } = await supabase.auth.signOut();
-    if (error) setNotice(sessionMessage, "로그아웃하지 못했습니다. 다시 시도해 주세요.", "info");
+    if (error) setNotice(sessionMessage, "Couldn't log out. Please try again.", "info");
   } catch {
-    setNotice(sessionMessage, "로그아웃하지 못했습니다. 다시 시도해 주세요.", "info");
+    setNotice(sessionMessage, "Couldn't log out. Please try again.", "info");
   } finally {
     logoutButton.disabled = false;
   }
@@ -289,17 +289,17 @@ async function signOut() {
 function boot() {
   const { url, key, incomplete, secret } = readConfig();
   if (secret) {
-    setNotice(setupMessage, "공개용 Publishable key만 넣어 주세요. 비밀키는 사용하지 않습니다.", "info");
+    setNotice(setupMessage, "Use only the public Publishable key. Secret keys are not used.", "info");
     lockAuthForm();
     return;
   }
   if (!url.startsWith("https://") || url.includes("YOUR_PROJECT_REF")) {
-    setNotice(setupMessage, "config.js에 Project URL과 Publishable key를 넣은 뒤 새로고침해 주세요.", "info");
+    setNotice(setupMessage, "Add the Project URL and Publishable key to config.js, then reload.", "info");
     lockAuthForm();
     return;
   }
   if (incomplete) {
-    setNotice(setupMessage, "config.js의 Publishable key 자리에 공개용 키를 넣은 뒤 새로고침해 주세요.", "info");
+    setNotice(setupMessage, "Put the public key in the Publishable key field of config.js, then reload.", "info");
     lockAuthForm();
     return;
   }
@@ -321,7 +321,7 @@ function boot() {
       showSignedOut();
       if (arrivedFromBrokenLink && !emailLinkNoted) {
         emailLinkNoted = true;
-        setNotice(authMessage, "메일 링크가 만료되었거나 이미 사용되었습니다. 필요한 메일을 다시 받아 주세요.", "info");
+        setNotice(authMessage, "The email link has expired or was already used. Please request a new email.", "info");
       }
       return;
     }

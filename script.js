@@ -12,7 +12,7 @@ function closeMenu() {
   nav?.classList.remove("is-open");
   menuButton?.classList.remove("is-open");
   menuButton?.setAttribute("aria-expanded", "false");
-  menuButton?.setAttribute("aria-label", "메뉴 열기");
+  menuButton?.setAttribute("aria-label", "Open menu");
 }
 
 updateHeader();
@@ -23,7 +23,7 @@ menuButton?.addEventListener("click", () => {
   nav.classList.toggle("is-open", willOpen);
   menuButton.classList.toggle("is-open", willOpen);
   menuButton.setAttribute("aria-expanded", String(willOpen));
-  menuButton.setAttribute("aria-label", willOpen ? "메뉴 닫기" : "메뉴 열기");
+  menuButton.setAttribute("aria-label", willOpen ? "Close menu" : "Open menu");
 });
 
 nav?.querySelectorAll("a").forEach((link) => link.addEventListener("click", closeMenu));

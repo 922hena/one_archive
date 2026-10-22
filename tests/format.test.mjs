@@ -96,7 +96,7 @@ test("music items keep fixed slot order", () => {
 });
 
 test("i18n fills parameters and falls back to the key", () => {
-  assert.equal(t("calendar.massCount", { count: 2 }), "Mass 2개");
+  assert.equal(t("calendar.massCount", { count: 2 }), "2 Missae");
   assert.equal(t("no.such.key"), "no.such.key");
 });
 

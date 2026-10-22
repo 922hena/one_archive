@@ -45,7 +45,7 @@ export function massTitle(mass) {
 
 export function liturgyLine(name, colorCode, { unknownKey = "liturgy.unknown" } = {}) {
   if (!name) return h("p", { class: "liturgy-line is-unknown", text: t(unknownKey) });
-  return h("p", { class: "liturgy-line" }, liturgyLabel(name, colorCode), " ", colorDot(colorCode, colorSwatch(colorCode)));
+  return h("p", { class: "liturgy-line", lang: "ko" }, liturgyLabel(name, colorCode), " ", colorDot(colorCode, colorSwatch(colorCode)));
 }
 
 function timeControls(startTime) {
@@ -105,7 +105,7 @@ export function openMassForm(ctx, { date, observances = [], roles = [], layouts 
     ? observances.map((observance) =>
         h("label", { class: "choice" },
           h("input", { type: "radio", name: choiceName, value: observance.id, checked: observance === initialObservance }),
-          h("span", {}, liturgyLabel(observance.name_ko, observance.color_code), " ",
+          h("span", { lang: "ko" }, liturgyLabel(observance.name_ko, observance.color_code), " ",
             colorDot(observance.color_code, colorSwatch(observance.color_code)))
         )
       )
@@ -240,7 +240,7 @@ export function openMassForm(ctx, { date, observances = [], roles = [], layouts 
   body.append(...[
     h("fieldset", { class: "field choices form-liturgy" },
       h("legend", { text: t("mass.liturgyLabel") }),
-      h("p", { class: "dialog-date num", text: formatLongDate(formDate) }),
+      h("p", { class: "dialog-date num", lang: "ko", text: formatLongDate(formDate) }),
       liturgyView
     ),
     h("div", { class: "field" },
@@ -501,7 +501,7 @@ function pickMasses(rows, { title, lead, cancelLabel, noneLabel = null }) {
         h("label", { class: disabled ? "pick-row is-disabled" : "pick-row" },
           box,
           h("span", { class: "pick-main" },
-            h("span", { class: "num", text: formatLongDate(item.local_date) }),
+            h("span", { class: "num", lang: "ko", text: formatLongDate(item.local_date) }),
             h("span", { class: "meta", text: notes.join(" · ") })
           )
         )
@@ -673,20 +673,20 @@ export async function renderMass(container, ctx, { id }) {
   const header = h("section", { class: "mass-head" },
     h("a", { href: `#/date/${mass.local_date}`, class: "back-link" }, t("mass.backToDate")),
     h("h1", { class: "page-title", text: t("mass.pageTitle") }),
-    h("p", { class: "date-title num", text: formatLongDate(mass.local_date) }),
+    h("p", { class: "date-title num", lang: "ko", text: formatLongDate(mass.local_date) }),
     liturgyLine(mass.celebration_name, mass.color_code)
   );
 
   const facts = [
-    [t("mass.venueLabel"), mass.venue_name || "—"],
-    [t("mass.layoutLabel"), layout ? h("a", { href: "#/layouts", text: layout.name }) : t("mass.noLayout")],
+    [t("mass.venueLabel"), mass.venue_name ? h("span", { translate: "no", text: mass.venue_name }) : "—"],
+    [t("mass.layoutLabel"), layout ? h("a", { href: "#/layouts", translate: "no", text: layout.name }) : t("mass.noLayout")],
     mass.status && mass.status !== "planned" ? [t("mass.statusField"), t(`mass.status.${mass.status}`)] : null,
     sourceKey(mass.liturgy_source) === "unknown" ? null : [t("mass.liturgyLabel"), t(`mass.source.${sourceKey(mass.liturgy_source)}`)]
   ].filter(Boolean);
 
   const card = h("section", { class: "mass-card", "aria-label": massTitle(mass) },
     h("div", { class: "mass-card-head" },
-      h("h2", { class: "mass-name" }, massTitle(mass), mass.start_time ? h("span", { class: "time num", text: formatTime(mass.start_time) }) : null),
+      h("h2", { class: "mass-name", translate: "no" }, massTitle(mass), mass.start_time ? h("span", { class: "time num", text: formatTime(mass.start_time) }) : null),
       actionMenu(t("mass.moreActions"), [
         { label: t("mass.edit"), onSelect: editMass },
         { label: t("mass.editItems"), onSelect: () => openItemsEditor(ctx, mass, roles) },
@@ -694,7 +694,7 @@ export async function renderMass(container, ctx, { id }) {
       ])
     ),
     h("dl", { class: "mass-facts" }, facts.flatMap(([name, value]) => [h("dt", { text: name }), h("dd", {}, value)])),
-    mass.notes ? h("p", { class: "notes", text: mass.notes }) : null,
+    mass.notes ? h("p", { class: "notes", translate: "no", text: mass.notes }) : null,
     h("div", { class: "mass-actions" },
       h("button", { type: "button", class: "solid-button", onclick: () => notify(t("mass.performSoon")) }, t("mass.performMode")),
       h("button", { type: "button", class: "ghost-button", onclick: () => openUploadDialog(ctx) }, t("mass.addScore"))
@@ -705,7 +705,7 @@ export async function renderMass(container, ctx, { id }) {
   const musicRows = slots.flatMap((slot) => {
     const role = roleById.get(slot.role_id);
     const number = String((role?.slot_no ?? 0) + 1).padStart(2, "0");
-    const itemName = slot.display_name || role?.name_la || roleLabel(role) || t("mass.unnamedItem");
+    const itemName = slot.display_name || roleLabel(role) || t("mass.unnamedItem");
     const entries = slot.mass_music_entries ?? [];
     const slotActions = [
       {
@@ -732,10 +732,10 @@ export async function renderMass(container, ctx, { id }) {
       return h("li", { class: "music-row" },
         index === 0 ? h("span", { class: "music-no num", text: number }) : blank(),
         index === 0
-          ? h("span", { class: "music-role" }, itemName, slot.display_name && role?.name_la ? h("small", { text: role.name_la }) : null)
+          ? h("span", { class: "music-role", translate: "no" }, itemName, slot.display_name && role?.name_la ? h("small", { text: role.name_la }) : null)
           : blank(),
         entry
-          ? h("div", { class: "music-work" },
+          ? h("div", { class: "music-work", translate: "no" },
               h("button", { type: "button", class: "music-title", onclick: () => openViewer(ctx, score) }, displayScoreTitle(score)),
               score?.composer_name ? h("span", { class: "music-composer", text: score.composer_name }) : null
             )

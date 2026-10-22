@@ -9,9 +9,9 @@ YEAR SCORE UI를 수정하거나 생성하기 전에 `docs/design-system.md`를 
 - Pretendard; Onyx Black #0B0B0D; Text Graphite #3F4450; White #FFFFFF; border #E9EAEC.
 - 모바일 바깥 좌우 24px, 앱바/하단 탭 사이 콘텐츠 위아래 40px, 섹션 24px, 카드 내부 20px.
 - 버튼/입력 높이 48px, 카드 radius 12px, 버튼 radius 8px, 그림자 최소화.
-- Mass와 Layout의 음악 목록 행 공통 최소 48px, 고정된 번호·라틴어 역할·원어 작품명·메뉴 열 정렬.
+- Missa와 Music Parts 화면의 음악 목록 행 공통 최소 48px, 고정된 번호·라틴어 역할·원어 작품명·메뉴 열 정렬.
 - Home: 큰 Liturgical Calendar 카드 안에 TODAY, 그 아래 Quick Actions `Add Score`와 `Search` 두 카드만. 임의의 Recently Used 등의 카드 추가 금지.
-- 날짜·공식 전례력 큰 제목만 한국어, 일반 인터페이스 영어, 음악 항목 라틴어, 작품과 작곡가 이름 원어 보존. 사용자 입력값 임의 번역 금지.
+- 언어·용어는 PRD의 `Language & Terminology Policy`(P0)를 따른다: 날짜와 전례색 약칭만 한국어, 공식 전례력 큰 제목은 영어(출처가 확인된 영어 명칭이 준비되기 전에는 기존 한국어 표시), 일반 인터페이스 영어, 미사 명칭 `Missa`와 음악 항목은 라틴어(확인되지 않은 라틴어를 만들지 않음), 작품과 작곡가 이름 원어 보존. 사용자 입력값 임의 번역 금지. 표시 언어 때문에 DB 테이블명·API 경로·회원 정보·악보·미사 기록을 바꾸지 않는다.
 - 전례 순서·전례색 기준은 운영자 관리, 음악 슬롯 선택/표시명은 사용자 편집. 목업 데이터로 운영 DB를 채우지 않는다.
 - 실제 기능 보존이 우선. 디자인만 변경하면서 Supabase Auth/UID/API/RLS/Storage/테이블 및 운영 데이터 변경 금지. DB 변경 필요 시 먼저 계획을 제시하고 승인 대기.
 
