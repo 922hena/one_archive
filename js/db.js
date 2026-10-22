@@ -12,6 +12,7 @@ const SCORE_FIELDS = "id,title,composer_name,provisional_title,status,created_at
 const FILE_FIELDS = "id,storage_path,mime_type,byte_size,original_filename,page_no,created_at";
 const OBSERVANCE_FIELDS =
   "id,calendar_date,sort_order,name_ko,name_en,name_la,season_code,color_code,rank_code,source_url,verification_status";
+const MASS_OBSERVANCE = "observance:liturgical_observances(name_ko,name_en)";
 
 function codedError(code) {
   const error = new Error(code);
@@ -70,7 +71,7 @@ export function createDb(supabase) {
         .from("mass_events")
         .select(
           "id,local_date,start_time,title,celebration_name,season_code,color_code,liturgy_source,venue_name,status,created_at," +
-            "mass_music_slots(id,mass_music_entries(id))"
+            `${MASS_OBSERVANCE},mass_music_slots(id,mass_music_entries(id))`
         )
         .eq("local_date", date)
     );
@@ -82,7 +83,7 @@ export function createDb(supabase) {
       supabase
         .from("mass_events")
         .select(
-          "*,mass_music_slots(id,role_id,display_name," +
+          `*,${MASS_OBSERVANCE},mass_music_slots(id,role_id,display_name,` +
             `mass_music_entries(id,sort_order,created_at,owned_score_id,owned_scores(${SCORE_FIELDS},score_files(${FILE_FIELDS}))))`
         )
         .eq("id", id)

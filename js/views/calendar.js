@@ -5,13 +5,15 @@ import {
   formatLongDate,
   formatTime,
   liturgyLabel,
+  massLiturgyTitle,
   monthGrid,
+  observanceTitle,
   parseIsoDate,
   todayIso,
   weekdayShort
 } from "../format.js";
 import { h, colorDot, notify } from "../ui.js";
-import { openMassForm, massTitle, liturgyLine } from "./mass.js";
+import { openMassForm, massTitle, liturgyLine, liturgyText } from "./mass.js";
 
 function groupBy(rows, key) {
   const map = new Map();
@@ -66,7 +68,7 @@ export function calendarCard(ctx, { year, month, selected, today, observancesByD
         if (cell.iso === today) classes.push("is-today");
         const label = [
           formatLongDate(cell.iso),
-          observances.map((observance) => liturgyLabel(observance.name_ko, observance.color_code)).join(", "),
+          observances.map((observance) => liturgyLabel(observanceTitle(observance).text, observance.color_code)).join(", "),
           massCount ? t(massCount === 1 ? "calendar.massCountOne" : "calendar.massCount", { count: massCount }) : ""
         ].filter(Boolean).join(", ");
         return h("a", { href: `#/${base}/${cell.iso}`, class: classes.join(" "), "aria-label": label, "aria-current": cell.iso === selected ? "date" : null },
@@ -90,7 +92,7 @@ export function calendarCard(ctx, { year, month, selected, today, observancesByD
 
 function dayPanel(ctx, { selected, observances, masses, roles, layouts, venues }) {
   const liturgy = observances.length
-    ? observances.map((observance) => liturgyLine(observance.name_ko, observance.color_code))
+    ? observances.map((observance) => liturgyLine(observanceTitle(observance), observance.color_code))
     : [liturgyLine(null, null)];
 
   const source = observances.find((observance) => observance.source_url);
@@ -99,6 +101,7 @@ function dayPanel(ctx, { selected, observances, masses, roles, layouts, venues }
         masses.map((mass) => {
           const slots = mass.mass_music_slots ?? [];
           const linked = slots.reduce((sum, slot) => sum + (slot.mass_music_entries?.length ?? 0), 0);
+          const liturgy = massLiturgyTitle(mass);
           return h("li", {},
             h("a", { href: `#/mass/${mass.id}`, class: "list-row is-link" },
               h("span", { class: "time num", text: formatTime(mass.start_time) || t("calendar.noTime") }),
@@ -106,9 +109,7 @@ function dayPanel(ctx, { selected, observances, masses, roles, layouts, venues }
                 h("strong", { translate: "no", text: massTitle(mass) }),
                 h("span", { class: "meta" },
                   [
-                    mass.celebration_name
-                      ? h("span", { lang: "ko", text: liturgyLabel(mass.celebration_name, mass.color_code) })
-                      : t("liturgy.unknown"),
+                    liturgy.text ? liturgyText(liturgy, mass.color_code) : t("liturgy.unknown"),
                     mass.venue_name ? h("span", { translate: "no", text: mass.venue_name }) : null,
                     mass.status && mass.status !== "planned" ? t(`mass.status.${mass.status}`) : null
                   ].filter(Boolean).flatMap((part, index) => (index ? [" · ", part] : [part]))

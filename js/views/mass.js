@@ -1,12 +1,14 @@
 import { t } from "../i18n.js";
 import {
+  colorAbbr,
   formatHourLabel,
   formatLongDate,
   formatTime,
   hourValue,
   isHourChoice,
-  liturgyLabel,
   colorSwatch,
+  massLiturgyTitle,
+  observanceTitle,
   sortBySlotNo,
   weekdayIndex,
   weekdayName
@@ -43,9 +45,17 @@ export function massTitle(mass) {
   return mass?.title?.trim() || t("mass.untitled");
 }
 
-export function liturgyLine(name, colorCode, { unknownKey = "liturgy.unknown" } = {}) {
-  if (!name) return h("p", { class: "liturgy-line is-unknown", text: t(unknownKey) });
-  return h("p", { class: "liturgy-line", lang: "ko" }, liturgyLabel(name, colorCode), " ", colorDot(colorCode, colorSwatch(colorCode)));
+// title: { text, lang } from observanceTitle / massLiturgyTitle. The color abbreviation is always Korean.
+export function liturgyText(title, colorCode) {
+  return h("span", {},
+    h("span", { lang: title.lang, text: title.text }),
+    colorCode ? [" ", h("span", { lang: "ko", text: `(${colorAbbr(colorCode)})` })] : null
+  );
+}
+
+export function liturgyLine(title, colorCode, { unknownKey = "liturgy.unknown" } = {}) {
+  if (!title?.text) return h("p", { class: "liturgy-line is-unknown", text: t(unknownKey) });
+  return h("p", { class: "liturgy-line" }, liturgyText(title, colorCode), colorDot(colorCode, colorSwatch(colorCode)));
 }
 
 function timeControls(startTime) {
@@ -105,11 +115,11 @@ export function openMassForm(ctx, { date, observances = [], roles = [], layouts 
     ? observances.map((observance) =>
         h("label", { class: "choice" },
           h("input", { type: "radio", name: choiceName, value: observance.id, checked: observance === initialObservance }),
-          h("span", { lang: "ko" }, liturgyLabel(observance.name_ko, observance.color_code), " ",
+          h("span", {}, liturgyText(observanceTitle(observance), observance.color_code), " ",
             colorDot(observance.color_code, colorSwatch(observance.color_code)))
         )
       )
-    : liturgyLine(initialObservance?.name_ko, initialObservance?.color_code);
+    : liturgyLine(initialObservance && observanceTitle(initialObservance), initialObservance?.color_code);
 
   const specialOpen = editing && sourceKey(mass.liturgy_source) === "user";
   const specialName = h("input", {
@@ -674,7 +684,7 @@ export async function renderMass(container, ctx, { id }) {
     h("a", { href: `#/date/${mass.local_date}`, class: "back-link" }, t("mass.backToDate")),
     h("h1", { class: "page-title", text: t("mass.pageTitle") }),
     h("p", { class: "date-title num", lang: "ko", text: formatLongDate(mass.local_date) }),
-    liturgyLine(mass.celebration_name, mass.color_code)
+    liturgyLine(massLiturgyTitle(mass), mass.color_code)
   );
 
   const facts = [

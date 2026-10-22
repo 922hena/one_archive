@@ -440,9 +440,10 @@ input[type="checkbox"], input[type="radio"] { accent-color: var(--oa-black); }
 .today-area { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--oa-line); min-width: 0; }
 .today-label { margin: 0; font-size: 12px; line-height: 18px; font-weight: 600; letter-spacing: 0.08em; color: var(--muted); }
 .today-date { margin: 4px 0 0; font-size: 20px; line-height: 28px; font-weight: 600; color: var(--oa-black); }
-.today-liturgy { margin: 12px 0 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 18px; line-height: 26px; font-weight: 600; color: var(--oa-black); }
+.today-liturgy { margin: 12px 0 0; display: flex; align-items: flex-start; gap: 8px; font-size: 18px; line-height: 26px; font-weight: 600; color: var(--oa-black); }
 .today-liturgy.is-unknown { font-size: 14px; line-height: 21px; font-weight: 400; color: var(--muted); }
-.today-liturgy .color-dot { width: 12px; height: 12px; }
+.today-liturgy .color-dot { width: 12px; height: 12px; margin-top: 7px; }
+.today-liturgy .color-chip { vertical-align: 2px; }
 .color-chip { display: inline-flex; align-items: center; height: 24px; padding: 0 8px; border: 1px solid var(--oa-line); border-radius: 12px; font-size: 12px; font-weight: 500; color: var(--oa-text); }
 .today-masses { margin: 16px 0 0; }
 p.today-masses { margin-top: 4px; }

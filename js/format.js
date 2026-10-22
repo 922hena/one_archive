@@ -162,6 +162,18 @@ export function liturgyLabel(name, colorCode) {
   return colorCode ? `${name} (${colorAbbr(colorCode)})` : name;
 }
 
+// English title once one is stored; the Korean official title until then.
+export function observanceTitle(observance) {
+  if (observance?.name_en) return { text: observance.name_en, lang: "en" };
+  return { text: observance?.name_ko ?? "", lang: "ko" };
+}
+
+// celebration_name keeps the Korean title copied when the Missa was saved; a name typed by the member stays as typed.
+export function massLiturgyTitle(mass) {
+  if (mass?.liturgy_source === "official" && mass.observance) return observanceTitle(mass.observance);
+  return { text: mass?.celebration_name ?? "", lang: "ko" };
+}
+
 export function compareMasses(a, b) {
   const timeA = a.start_time ?? "";
   const timeB = b.start_time ?? "";

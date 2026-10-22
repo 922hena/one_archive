@@ -76,12 +76,12 @@ export default {
       rose: "장미색"
     },
     season: {
-      unknown: "미확인",
-      advent: "대림 시기",
-      christmas: "성탄 시기",
-      ordinary: "연중 시기",
-      lent: "사순 시기",
-      easter: "부활 시기"
+      unknown: "Not confirmed",
+      advent: "Advent",
+      christmas: "Christmas Time",
+      ordinary: "Ordinary Time",
+      lent: "Lent",
+      easter: "Easter Time"
     }
   },
   calendar: {

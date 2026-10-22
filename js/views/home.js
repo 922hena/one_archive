@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { colorAbbr, colorSwatch, formatLongDate, formatTime, monthGrid, parseIsoDate, todayIso } from "../format.js";
+import { colorAbbr, colorSwatch, formatLongDate, formatTime, monthGrid, observanceTitle, parseIsoDate, todayIso } from "../format.js";
 import { h, colorDot, notify } from "../ui.js";
 import { calendarCard } from "./calendar.js";
 import { openUploadDialog } from "./library.js";
@@ -17,13 +17,16 @@ function groupBy(rows, key) {
 
 function liturgyBlock(observances) {
   if (!observances.length) return [h("p", { class: "today-liturgy is-unknown", text: t("liturgy.unknown") })];
-  return observances.map((observance) =>
-    h("p", { class: "today-liturgy", lang: "ko" },
+  return observances.map((observance) => {
+    const title = observanceTitle(observance);
+    return h("p", { class: "today-liturgy" },
       colorDot(observance.color_code, colorSwatch(observance.color_code)),
-      h("span", { text: observance.name_ko }),
-      observance.color_code ? h("span", { class: "color-chip", text: colorAbbr(observance.color_code) }) : null
-    )
-  );
+      h("span", {},
+        h("span", { lang: title.lang, text: title.text }),
+        observance.color_code ? [" ", h("span", { class: "color-chip", lang: "ko", text: colorAbbr(observance.color_code) })] : null
+      )
+    );
+  });
 }
 
 function todayArea({ selected, today, observances, masses }) {

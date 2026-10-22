@@ -13,7 +13,9 @@ import {
   formatTime,
   formatZonedDate,
   liturgyLabel,
+  massLiturgyTitle,
   monthGrid,
+  observanceTitle,
   parseIsoDate,
   sortBySlotNo,
   todayIso,
@@ -78,6 +80,21 @@ test("liturgy label uses color abbreviation", () => {
   assert.equal(liturgyLabel("대림 제1주일", "violet"), "대림 제1주일 (자)");
   assert.equal(liturgyLabel("모든 성인 대축일", "white"), "모든 성인 대축일 (백)");
   assert.equal(liturgyLabel(null, "green"), "");
+});
+
+test("liturgical titles are English once stored, Korean until then", () => {
+  const allSaints = { name_ko: "모든 성인 대축일", name_en: "Solemnity of All Saints" };
+  assert.deepEqual(observanceTitle(allSaints), { text: "Solemnity of All Saints", lang: "en" });
+  assert.deepEqual(observanceTitle({ name_ko: "연중 제30주일", name_en: null }), { text: "연중 제30주일", lang: "ko" });
+  assert.deepEqual(observanceTitle(null), { text: "", lang: "ko" });
+});
+
+test("an official Missa shows its day's title; a typed name stays as typed", () => {
+  const observance = { name_ko: "모든 성인 대축일", name_en: "Solemnity of All Saints" };
+  assert.equal(massLiturgyTitle({ liturgy_source: "official", celebration_name: "모든 성인 대축일", observance }).text, "Solemnity of All Saints");
+  assert.equal(massLiturgyTitle({ liturgy_source: "official", celebration_name: "모든 성인 대축일", observance: null }).text, "모든 성인 대축일");
+  assert.equal(massLiturgyTitle({ liturgy_source: "user", celebration_name: "본당 설립 기념 미사", observance: null }).text, "본당 설립 기념 미사");
+  assert.equal(massLiturgyTitle({ liturgy_source: "unknown", celebration_name: null, observance: null }).text, "");
 });
 
 test("masses sort by start time, untimed last, then creation", () => {
