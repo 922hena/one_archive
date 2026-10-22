@@ -111,9 +111,9 @@ test("every t() key used in the app exists in the Korean dictionary", () => {
     }
   };
   walk(fileURLToPath(root));
-  const html = readFileSync(new URL("../app.html", import.meta.url), "utf8");
+  const html = ["../app.html", "../preview.html"].map((page) => readFileSync(new URL(page, import.meta.url), "utf8")).join("\n");
   const keys = new Set();
-  const namespaces = "app|nav|common|format|liturgy|home|calendar|mass|roles|layouts|library|upload|viewer|camera|editor|pages|errors";
+  const namespaces = "app|nav|common|format|liturgy|home|calendar|mass|roles|layouts|library|upload|viewer|camera|editor|pages|errors|preview";
   const keyLiteral = new RegExp(`"((?:${namespaces})\\.[a-zA-Z][\\w.]*)"`, "g");
   for (const file of files.filter((path) => !path.includes("locales"))) {
     const source = readFileSync(file, "utf8");

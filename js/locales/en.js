@@ -424,5 +424,9 @@ export default {
     loadFailed: "Couldn't load the screen.",
     logoutFailed: "Couldn't log out. Please try again.",
     config: "Check the Supabase settings in config.js."
+  },
+  preview: {
+    login: "Log in",
+    locked: "This is a preview. Log in to add Scores and Missae."
   }
 };
