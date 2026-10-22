@@ -11,7 +11,7 @@ export default {
     calendarTitle: "Liturgical Calendar",
     today: "TODAY",
     selected: "SELECTED DATE",
-    viewFullCalendar: "View Full Calendar",
+    addMass: "+ Add Mass",
     noMass: "No Mass planned for this date.",
     quickActions: "Quick Actions",
     addScore: "Add Score",
@@ -49,6 +49,8 @@ export default {
   format: {
     longDate: "{year}년 {month}월 {day}일({weekday})",
     monthTitle: "{year}년 {month}월",
+    yearTitle: "{year}년",
+    monthOnly: "{month}월",
     weekdays: ["일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일"],
     weekdaysShort: ["일", "월", "화", "수", "목", "금", "토"]
   },

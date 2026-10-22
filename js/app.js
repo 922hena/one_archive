@@ -17,10 +17,10 @@ let lastHash = null;
 
 function parseRoute(hash) {
   const [name, param] = hash.replace(/^#\/?/, "").split("/");
-  if (name === "mass" && UUID.test(param ?? "")) return { nav: "mass", render: renderMass, params: { id: param } };
+  if (name === "mass" && UUID.test(param ?? "")) return { nav: "home", render: renderMass, params: { id: param } };
   if (name === "library") return { nav: "library", render: renderLibrary, params: {} };
-  if (name === "layouts") return { nav: "mass", render: renderLayouts, params: {} };
-  if (name === "date") return { nav: "mass", render: renderCalendar, params: { date: param ?? todayIso() } };
+  if (name === "layouts") return { nav: "home", render: renderLayouts, params: {} };
+  if (name === "date") return { nav: "home", render: renderCalendar, params: { date: param ?? todayIso() } };
   return { nav: "home", render: renderHome, params: { date: param ?? todayIso() } };
 }
 

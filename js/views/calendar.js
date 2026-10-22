@@ -3,7 +3,6 @@ import {
   addMonths,
   colorSwatch,
   formatLongDate,
-  formatMonthTitle,
   formatTime,
   liturgyLabel,
   monthGrid,
@@ -33,11 +32,22 @@ export function calendarCard(ctx, { year, month, selected, today, observancesByD
     return `#/${base}/${target.year}-${String(target.month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   };
 
+  const top = h("div", { class: "cal-top" },
+    heading ? h("h2", { class: "cal-title", text: heading }) : null,
+    h("span", { class: "cal-year num", "aria-hidden": "true", text: t("format.yearTitle", { year }) })
+  );
+
+  // Same 7 columns as the date grid, so the month sits exactly above Wednesday.
   const head = h("div", { class: "cal-head" },
-    h("a", { href: monthLink(previous), class: "icon-button", "aria-label": t("calendar.previousMonth") }, "‹"),
-    h("h2", { class: "num", text: formatMonthTitle(year, month) }),
-    h("a", { href: monthLink(next), class: "icon-button", "aria-label": t("calendar.nextMonth") }, "›"),
-    h("a", { href: `#/${base}/${today}`, class: "link-button" }, t("calendar.today"))
+    h("span", { class: "cal-arrows" },
+      h("a", { href: monthLink(previous), class: "icon-button", "aria-label": t("calendar.previousMonth") }, "‹"),
+      h("a", { href: monthLink(next), class: "icon-button", "aria-label": t("calendar.nextMonth") }, "›")
+    ),
+    h("h2", { class: "cal-month num" },
+      h("span", { class: "visually-hidden", text: `${t("format.yearTitle", { year })} ` }),
+      t("format.monthOnly", { month })
+    ),
+    h("a", { href: `#/${base}/${today}`, class: "ghost-button cal-today" }, t("calendar.today"))
   );
 
   const weekdays = h("div", { class: "cal-row cal-weekdays", "aria-hidden": "true" },
@@ -71,10 +81,8 @@ export function calendarCard(ctx, { year, month, selected, today, observancesByD
   );
 
   return h("section", { class: base === "home" ? "cal-card is-home" : "cal-card", "aria-label": t("calendar.title") },
-    heading ? h("h2", { class: "cal-title", text: heading }) : null,
-    head,
     h("div", { class: "cal-body" },
-      h("div", { class: "cal-grid" }, weekdays, weeks, h("p", { class: "hint", text: t("calendar.legend") })),
+      h("div", { class: "cal-grid" }, top, head, weekdays, weeks, h("p", { class: "hint", text: t("calendar.legend") })),
       footer
     )
   );

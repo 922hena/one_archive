@@ -56,7 +56,7 @@ function todayArea({ selected, today, observances, masses }) {
       : null,
     list,
     h("div", { class: "today-links" },
-      h("a", { href: `#/date/${selected}`, class: "link-button", text: t("home.viewFullCalendar") })
+      h("a", { href: `#/date/${selected}`, class: "ghost-button add-mass", text: t("home.addMass") })
     )
   );
 }
