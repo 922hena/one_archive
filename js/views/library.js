@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { formatBytes, formatDateTime, formatLongDate, formatShortDate, formatTime, formatZonedDate } from "../format.js";
+import { formatBytes, formatDateTime, formatLongDate, formatShortDate, formatTime } from "../format.js";
 import { uploadScore, validateFile, detectMime, cleanupStaleUploads, MAX_FILE_BYTES } from "../upload.js";
 import { h, createDialog, confirmDialog, errorMessage, notify, setBusy, displayScoreTitle } from "../ui.js";
 import { isImageScore, moveItem } from "../pages.js";
@@ -8,7 +8,7 @@ import { openPageEditor } from "./page-editor.js";
 import { fileProblemMessage, pageRow, photoSourceButtons } from "./page-list.js";
 import { openPhotoEditor } from "./photo-editor.js";
 import { roleLabel } from "./layouts.js";
-import { KEY_MODES, KEY_TONICS, parseKeyText, scorePeriod, tonicLabel } from "../score-meta.js";
+import { KEY_MODES, KEY_TONICS, parseKeyText, periodForYear, scorePeriod, tonicLabel } from "../score-meta.js";
 
 const FILE_ACCEPT = "application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png";
 
@@ -257,6 +257,18 @@ async function openEditScore(ctx, score) {
     h("option", { value: "" }, t("library.periodAuto")),
     periods.map((period) => h("option", { value: period.code, selected: period.code === score.period_code }, period.name_en))
   );
+  const periodFromYear = () => {
+    const yearText = yearInput.value.trim();
+    return (yearText && periodForYear(yearText, periods)) || "";
+  };
+  // The Period follows the year until the member picks a different one.
+  let yearPeriod = periodFromYear();
+  if (!score.period_code) periodSelect.value = yearPeriod;
+  yearInput.addEventListener("input", () => {
+    const next = periodFromYear();
+    if (periodSelect.value === "" || periodSelect.value === yearPeriod) periodSelect.value = next;
+    yearPeriod = next;
+  });
   const noteInput = h("textarea", { rows: 3, maxlength: 2000, translate: "no" }, score.note ?? "");
 
   body.append(
@@ -423,7 +435,6 @@ export async function renderLibrary(container, ctx) {
           h("th", { text: t("library.colComposer") }),
           h("th", { text: t("library.colFiles") }),
           h("th", { class: "is-num", text: t("library.colLinks") }),
-          h("th", { text: t("library.colCreated") }),
           h("th", { class: "is-actions", text: "" })
         )),
         h("tbody", {}, scores.map((score) => {
@@ -444,7 +455,6 @@ export async function renderLibrary(container, ctx) {
             h("td", { "data-label": t("library.colComposer"), translate: "no", text: score.composer_name ?? "" }),
             h("td", { "data-label": t("library.colFiles"), text: fileSummary(score.score_files) }),
             h("td", { "data-label": t("library.colLinks"), class: "is-num num", text: linkCount ? String(linkCount) : "–" }),
-            h("td", { "data-label": t("library.colCreated"), class: "num", text: formatZonedDate(score.created_at) }),
             h("td", { class: "is-actions" },
               h("button", { type: "button", class: "link-button", onclick: () => openViewer(ctx, score) }, t("common.open")),
               h("button", { type: "button", class: "link-button", onclick: () => openEditScore(ctx, score) }, t("common.edit")),

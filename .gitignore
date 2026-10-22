@@ -28,3 +28,6 @@ Thumbs.db
 # 임시 파일
 *.tmp
 *.bak
+
+# Presentation demo files (scores for manual testing)
+demo-files/

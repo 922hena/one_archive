@@ -601,7 +601,7 @@ export function createDb(supabase) {
   async function periods() {
     if (!periodsCache) {
       periodsCache = await run(
-        supabase.from("musical_periods").select("code,name_en,name_ko,start_year,end_year,sort_order").order("sort_order")
+        supabase.from("musical_periods").select("code,name_en,start_year,end_year,sort_order").order("sort_order")
       ).catch((error) => {
         if (isMissingRelation(error)) return [];
         throw error;
