@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { formatBytes, formatDateTime, formatLongDate, formatTime, formatZonedDate } from "../format.js";
+import { formatBytes, formatDateTime, formatLongDate, formatShortDate, formatTime, formatZonedDate } from "../format.js";
 import { uploadScore, validateFile, detectMime, cleanupStaleUploads, MAX_FILE_BYTES } from "../upload.js";
 import { h, createDialog, confirmDialog, errorMessage, notify, setBusy, displayScoreTitle } from "../ui.js";
 import { isImageScore, moveItem } from "../pages.js";
@@ -8,8 +8,67 @@ import { openPageEditor } from "./page-editor.js";
 import { fileProblemMessage, pageRow, photoSourceButtons } from "./page-list.js";
 import { openPhotoEditor } from "./photo-editor.js";
 import { roleLabel } from "./layouts.js";
+import { KEY_MODES, KEY_TONICS, parseKeyText, scorePeriod, tonicLabel } from "../score-meta.js";
 
 const FILE_ACCEPT = "application/pdf,image/jpeg,image/png,.pdf,.jpg,.jpeg,.png";
+
+export function keyLabel(tonic, mode) {
+  if (mode === "atonal" || (!tonic && mode)) return t(`keys.modeOption.${mode}`);
+  if (!tonic) return "";
+  return mode ? `${tonicLabel(tonic)} ${t(`keys.mode.${mode}`)}` : tonicLabel(tonic);
+}
+
+export function periodName(code, periods) {
+  if (!code) return "";
+  return periods.find((period) => period.code === code)?.name_en ?? code;
+}
+
+function yearLabel(score) {
+  if (!score?.composition_year) return "";
+  return score.composition_year_approx ? t("library.approxYear", { year: score.composition_year }) : String(score.composition_year);
+}
+
+// Played songs of one Score, oldest first: date · Music Part · place (PRD SCORE-013, 014).
+function performanceList(ctx, score) {
+  const head = h("h3", { class: "sub-head", text: t("library.performancesHead", { count: "…" }) });
+  const list = h("ol", { class: "history-list" }, h("li", { class: "meta", text: t("common.loading") }));
+  const element = h("section", { class: "performance-section" },
+    head,
+    h("p", { class: "hint", text: t("library.performancesHint") }),
+    list
+  );
+  async function load() {
+    try {
+      const [rows, roles] = await Promise.all([ctx.db.scorePerformances(score.id), ctx.db.roles()]);
+      const roleById = new Map(roles.map((role) => [role.id, role]));
+      head.textContent = t("library.performancesHead", { count: rows.length });
+      list.replaceChildren(
+        ...(rows.length
+          ? rows.map((row) =>
+              h("li", { class: "history-row" },
+                h("span", { class: "history-date num", lang: "ko", text: formatShortDate(row.local_date) }),
+                h("span", { class: "history-part", translate: "no", text: row.part_display_name || roleLabel(roleById.get(row.role_id)) || "—" }),
+                h("span", { class: "history-place", translate: "no", text: row.venue_label || "—" }),
+                row.note ? h("span", { class: "history-note", translate: "no", text: row.note }) : null
+              )
+            )
+          : [h("li", { class: "empty", text: t("library.notPerformed") })])
+      );
+    } catch (error) {
+      head.textContent = t("library.performancesHead", { count: "–" });
+      list.replaceChildren(h("li", { class: "empty", text: errorMessage(error, "library.historyFailed") }));
+    }
+  }
+  return { element, load };
+}
+
+export function openScoreHistory(ctx, score) {
+  const { body, footer, close } = createDialog(t("library.historyTitle"), { wide: true });
+  const history = performanceList(ctx, score);
+  body.append(h("p", { class: "dialog-score", translate: "no", text: displayScoreTitle(score) }), history.element);
+  footer.append(h("button", { type: "button", class: "ghost-button", onclick: close }, t("common.close")));
+  history.load();
+}
 
 function fileSummary(files = []) {
   if (!files.length) return t("library.noFiles");
@@ -142,21 +201,109 @@ export function openUploadDialog(ctx, { title = t("upload.title"), saveLabel = t
   });
 }
 
-function openEditScore(ctx, score) {
-  const { body, footer, close, setStatus } = createDialog(t("library.editTitle"));
+async function openEditScore(ctx, score) {
+  const periods = await ctx.db.periods().catch(() => []);
+  const { body, footer, close, setStatus } = createDialog(t("library.editTitle"), { wide: true });
   const titleInput = h("input", { type: "text", maxlength: 200, value: score.title ?? "", placeholder: score.provisional_title });
   const composerInput = h("input", { type: "text", maxlength: 200, value: score.composer_name ?? "" });
+
+  const tonicSelect = h("select", {},
+    h("option", { value: "" }, t("library.keyNone")),
+    KEY_TONICS.map((tonic) => h("option", { value: tonic, selected: tonic === score.key_tonic }, tonicLabel(tonic)))
+  );
+  const modeSelect = h("select", {},
+    h("option", { value: "" }, t("library.keyNone")),
+    KEY_MODES.map((mode) => h("option", { value: mode, selected: mode === score.key_mode }, t(`keys.modeOption.${mode}`)))
+  );
+  const keyTextInput = h("input", {
+    type: "text",
+    maxlength: 60,
+    value: score.key_text ?? "",
+    placeholder: t("library.keyTextPlaceholder"),
+    translate: "no"
+  });
+  // The written key stays as typed; a recognised one only suggests the standard key.
+  let suggestion = null;
+  const suggestButton = h("button", { type: "button", class: "link-button", hidden: true });
+  const updateSuggestion = () => {
+    suggestion = parseKeyText(keyTextInput.value);
+    const same = suggestion && suggestion.tonic === tonicSelect.value && suggestion.mode === modeSelect.value;
+    suggestButton.hidden = !suggestion || Boolean(same);
+    if (suggestion) suggestButton.textContent = t("library.keySuggest", { key: keyLabel(suggestion.tonic, suggestion.mode) });
+  };
+  keyTextInput.addEventListener("input", updateSuggestion);
+  tonicSelect.addEventListener("change", updateSuggestion);
+  modeSelect.addEventListener("change", updateSuggestion);
+  suggestButton.addEventListener("click", () => {
+    if (!suggestion) return;
+    tonicSelect.value = suggestion.tonic;
+    modeSelect.value = suggestion.mode;
+    updateSuggestion();
+    tonicSelect.focus();
+  });
+  updateSuggestion();
+
+  const yearInput = h("input", {
+    type: "number",
+    inputmode: "numeric",
+    min: 800,
+    max: 2100,
+    step: 1,
+    value: score.composition_year ?? "",
+    placeholder: t("library.yearPlaceholder")
+  });
+  const approxBox = h("input", { type: "checkbox", checked: Boolean(score.composition_year_approx) });
+  const periodSelect = h("select", {},
+    h("option", { value: "" }, t("library.periodAuto")),
+    periods.map((period) => h("option", { value: period.code, selected: period.code === score.period_code }, period.name_en))
+  );
+  const noteInput = h("textarea", { rows: 3, maxlength: 2000, translate: "no" }, score.note ?? "");
+
   body.append(
     h("label", { class: "field" }, h("span", { text: t("upload.scoreTitle") }), titleInput),
     h("label", { class: "field" }, h("span", { text: t("upload.composer") }), composerInput),
-    h("p", { class: "hint", text: t("library.provisional", { name: score.provisional_title }) })
+    h("p", { class: "hint", text: t("library.provisional", { name: score.provisional_title }) }),
+    h("div", { class: "field-row" },
+      h("label", { class: "field" }, h("span", { text: t("library.keyTonic") }), tonicSelect),
+      h("label", { class: "field" }, h("span", { text: t("library.keyMode") }), modeSelect)
+    ),
+    h("div", { class: "field-group" },
+      h("label", { class: "field" }, h("span", { text: t("library.keyText") }), keyTextInput),
+      suggestButton
+    ),
+    h("div", { class: "field-row" },
+      h("div", { class: "field-group" },
+        h("label", { class: "field" }, h("span", { text: t("library.yearLabel") }), yearInput),
+        h("label", { class: "choice" }, approxBox, h("span", { text: t("library.yearApprox") }))
+      ),
+      h("label", { class: "field" }, h("span", { text: t("library.periodLabel") }), periodSelect)
+    ),
+    h("p", { class: "hint", text: t("library.periodHint") }),
+    h("label", { class: "field" }, h("span", { text: t("library.noteLabel") }), noteInput)
   );
   const saveButton = h("button", { type: "button", class: "solid-button" }, t("common.save"));
   footer.append(h("button", { type: "button", class: "ghost-button", onclick: close }, t("common.cancel")), saveButton);
   saveButton.addEventListener("click", async () => {
+    const yearText = yearInput.value.trim();
+    const year = yearText ? Number(yearText) : null;
+    if (yearText && (!Number.isInteger(year) || year < 800 || year > 2100)) {
+      setStatus(t("library.yearInvalid"));
+      yearInput.focus();
+      return;
+    }
     setBusy([saveButton], true);
     try {
-      await ctx.db.updateScore(score.id, { title: titleInput.value, composer_name: composerInput.value });
+      await ctx.db.updateScore(score.id, {
+        title: titleInput.value,
+        composer_name: composerInput.value,
+        key_tonic: tonicSelect.value || null,
+        key_mode: modeSelect.value || null,
+        key_text: keyTextInput.value,
+        composition_year: year,
+        composition_year_approx: year != null && approxBox.checked,
+        period_code: periodSelect.value || null,
+        note: noteInput.value
+      });
       close();
       notify(t("library.saved"), "success");
       ctx.refresh();
@@ -172,13 +319,29 @@ async function openDetails(ctx, score) {
   const { body, footer, close } = createDialog(t("library.detailsTitle"), { wide: true });
   const files = score.score_files ?? [];
   const usageList = h("ul", { class: "plain-list compact" }, h("li", { class: "meta", text: t("common.loading") }));
+  const periods = await ctx.db.periods().catch(() => []);
+  const period = scorePeriod(score, periods);
+  const key = [keyLabel(score.key_tonic, score.key_mode), score.key_text ? `(${score.key_text})` : ""].filter(Boolean).join(" ");
+  const facts = [
+    [t("library.scoreTitle"), displayScoreTitle(score), { translate: "no" }],
+    [t("library.provisionalLabel"), score.provisional_title, { translate: "no" }],
+    score.composer_name ? [t("upload.composer"), score.composer_name, { translate: "no" }] : null,
+    key ? [t("library.keyLabel"), key, { translate: "no" }] : null,
+    score.composition_year ? [t("library.yearLabel"), yearLabel(score), { class: "num" }] : null,
+    period.code ? [t("library.periodLabel"), periodName(period.code, periods), {}] : null,
+    [t("library.createdAt"), formatDateTime(score.created_at), { class: "num" }],
+    [t("library.lastEditedAt"), formatDateTime(score.last_edited_at), { class: "num" }]
+  ].filter(Boolean);
+  const history = performanceList(ctx, score);
   body.append(
     h("dl", { class: "detail-grid" },
-      h("dt", { text: t("library.scoreTitle") }), h("dd", { translate: "no", text: displayScoreTitle(score) }),
-      h("dt", { text: t("library.provisionalLabel") }), h("dd", { translate: "no", text: score.provisional_title }),
-      h("dt", { text: t("library.createdAt") }), h("dd", { class: "num", text: formatDateTime(score.created_at) }),
-      h("dt", { text: t("library.lastEditedAt") }), h("dd", { class: "num", text: formatDateTime(score.last_edited_at) })
+      facts.flatMap(([name, value, props]) => [h("dt", { text: name }), h("dd", { ...props, text: value })])
     ),
+    h("div", { class: "score-note", hidden: !score.note },
+      h("h3", { class: "sub-head", text: t("library.noteLabel") }),
+      h("p", { class: "note-text", translate: "no", text: score.note ?? "" })
+    ),
+    history.element,
     h("h3", { class: "sub-head", text: t("library.filesHead") }),
     h(
       "table",
@@ -202,6 +365,7 @@ async function openDetails(ctx, score) {
     usageList
   );
   footer.append(h("button", { type: "button", class: "ghost-button", onclick: close }, t("common.close")));
+  history.load();
 
   try {
     const [usage, roles] = await Promise.all([ctx.db.scoreUsage(score.id), ctx.db.roles()]);
@@ -303,7 +467,10 @@ export async function renderLibrary(container, ctx) {
         h("h1", { text: t("library.title") }),
         h("p", { class: "lead", text: t("library.lead", { count: scores.length }) })
       ),
-      h("button", { type: "button", class: "solid-button", onclick: () => openUploadDialog(ctx) }, t("library.upload"))
+      h("div", { class: "page-head-actions" },
+        h("a", { href: "#/search?t=scores", class: "ghost-button" }, t("library.searchScores")),
+        h("button", { type: "button", class: "solid-button", onclick: () => openUploadDialog(ctx) }, t("library.upload"))
+      )
     ),
     table
   );

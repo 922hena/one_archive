@@ -3,12 +3,16 @@ import { compareMasses, todayIso } from "./format.js";
 import { comparePages } from "./pages.js";
 import { liturgyFields, needsLiturgyRefresh, occurrenceDates, occurrenceWindow } from "./recurrence.js";
 import { isMissingRelation } from "./errors.js";
+import { playedEntries } from "./played.js";
 
 export { isMissingRelation };
 
 export const SIGNED_URL_SECONDS = 300;
+export const SEARCH_PAGE_SIZE = 50;
 
-const SCORE_FIELDS = "id,title,composer_name,provisional_title,status,created_at,last_edited_at";
+const SCORE_FIELDS =
+  "id,title,composer_name,provisional_title,status,created_at,last_edited_at," +
+  "composition_year,composition_year_approx,period_code,key_tonic,key_mode,key_text,note";
 const FILE_FIELDS = "id,storage_path,mime_type,byte_size,original_filename,page_no,created_at";
 const OBSERVANCE_FIELDS =
   "id,calendar_date,sort_order,name_ko,name_en,name_la,season_code,color_code,rank_code,source_url,verification_status";
@@ -84,7 +88,8 @@ export function createDb(supabase) {
         .from("mass_events")
         .select(
           `*,${MASS_OBSERVANCE},mass_music_slots(id,role_id,display_name,` +
-            `mass_music_entries(id,sort_order,created_at,owned_score_id,owned_scores(${SCORE_FIELDS},score_files(${FILE_FIELDS}))))`
+            `mass_music_entries(id,sort_order,created_at,owned_score_id,not_played_at,note,` +
+            `owned_scores(${SCORE_FIELDS},score_files(${FILE_FIELDS}))))`
         )
         .eq("id", id)
         .maybeSingle()
@@ -142,7 +147,7 @@ export function createDb(supabase) {
     return run(
       supabase
         .from("mass_series")
-        .select("id,title,start_time,venue_name,layout_id,weekday,interval_weeks,starts_on,ends_on")
+        .select("id,title,start_time,venue_name,venue_id,layout_id,weekday,interval_weeks,starts_on,ends_on")
     );
   }
 
@@ -235,6 +240,7 @@ export function createDb(supabase) {
               title: item.title,
               start_time: item.start_time,
               venue_name: item.venue_name,
+              venue_id: item.venue_id ?? null,
               layout_id: item.layout_id,
               notes: null,
               series_id: item.id,
@@ -270,12 +276,13 @@ export function createDb(supabase) {
     let query = supabase
       .from("mass_events")
       .select(
-        "id,local_date,start_time,title,series_locked,created_at," +
-          "mass_music_slots(id,mass_music_entries(id,performance_confirmations(id)))"
+        "id,local_date,start_time,title,status,series_locked,created_at," +
+          "mass_music_slots(id,mass_music_entries(id,not_played_at,performance_confirmations(id)))"
       )
       .eq("series_id", seriesId);
     if (from) query = query.gte("local_date", from);
     const rows = await run(query);
+    const today = todayIso();
     return rows
       .map((row) => {
         const entries = (row.mass_music_slots ?? []).flatMap((slot) => slot.mass_music_entries ?? []);
@@ -287,6 +294,7 @@ export function createDb(supabase) {
           created_at: row.created_at,
           series_locked: Boolean(row.series_locked),
           linked: entries.length > 0,
+          played: playedEntries(row, today).length,
           recorded: entries.some((entry) => (entry.performance_confirmations ?? []).length > 0)
         };
       })
@@ -437,12 +445,14 @@ export function createDb(supabase) {
   }
 
   function updateScore(id, fields) {
-    return run(
-      supabase
-        .from("owned_scores")
-        .update({ title: normalizeName(fields.title), composer_name: normalizeName(fields.composer_name) })
-        .eq("id", id)
-    );
+    const patch = { title: normalizeName(fields.title), composer_name: normalizeName(fields.composer_name) };
+    for (const name of ["composition_year", "composition_year_approx", "period_code", "key_tonic", "key_mode"]) {
+      if (name in fields) patch[name] = fields[name] ?? null;
+    }
+    for (const name of ["key_text", "note"]) {
+      if (name in fields) patch[name] = normalizeName(fields[name]);
+    }
+    return run(supabase.from("owned_scores").update(patch).eq("id", id));
   }
 
   async function deleteScore(score) {
@@ -503,6 +513,164 @@ export function createDb(supabase) {
     await supabase.storage.from(SCORE_BUCKET).remove(files.map((file) => file.storage_path));
   }
 
+  // ---- Played songs (decision D1): only songs that were not played are stored.
+  function setNotPlayed(entryId, notPlayed) {
+    return run(
+      supabase
+        .from("mass_music_entries")
+        .update({ not_played_at: notPlayed ? new Date().toISOString() : null })
+        .eq("id", entryId)
+    );
+  }
+
+  function setEntryNote(entryId, note) {
+    return run(supabase.from("mass_music_entries").update({ note: normalizeName(note) }).eq("id", entryId));
+  }
+
+  function scorePerformances(scoreId) {
+    return run(
+      supabase
+        .from("performed_entries")
+        .select("entry_id,mass_event_id,local_date,start_time,role_id,part_display_name,venue_label,note")
+        .eq("owned_score_id", scoreId)
+        .order("local_date")
+        .order("start_time", { nullsFirst: true })
+    );
+  }
+
+  function performanceNotes(scoreIds) {
+    if (!scoreIds.length) return Promise.resolve([]);
+    return run(
+      supabase
+        .from("performed_entries")
+        .select("entry_id,owned_score_id,local_date,note")
+        .in("owned_score_id", scoreIds)
+        .not("note", "is", null)
+        .order("local_date", { ascending: false })
+        .limit(500)
+    );
+  }
+
+  // ---- My Places (decision D3)
+  const VENUE_FIELDS = "id,name,layout_id,created_at";
+
+  async function venues() {
+    try {
+      const rows = await run(supabase.from("user_venues").select(VENUE_FIELDS));
+      return rows.sort((a, b) => a.name.localeCompare(b.name, "ko"));
+    } catch (error) {
+      if (isMissingRelation(error)) return [];
+      throw error;
+    }
+  }
+
+  async function createVenue(name, layoutId = null) {
+    const clean = normalizeName(name);
+    const { data, error } = await supabase
+      .from("user_venues")
+      .insert({ name: clean, layout_id: layoutId })
+      .select(VENUE_FIELDS)
+      .single();
+    if (!error) return data;
+    if (error.code !== "23505") throw error;
+    const found = (await venues()).find((row) => row.name.trim().toLowerCase() === clean.toLowerCase());
+    if (!found) throw error;
+    return found;
+  }
+
+  // Missae linked to the place show its new name too.
+  async function updateVenue(venue, fields) {
+    const patch = {};
+    if ("name" in fields) patch.name = normalizeName(fields.name);
+    if ("layout_id" in fields) patch.layout_id = fields.layout_id || null;
+    await run(supabase.from("user_venues").update(patch).eq("id", venue.id));
+    if (patch.name && patch.name !== venue.name) {
+      await run(supabase.from("mass_events").update({ venue_name: patch.name }).eq("venue_id", venue.id));
+      await run(supabase.from("mass_series").update({ venue_name: patch.name }).eq("venue_id", venue.id));
+    }
+  }
+
+  // Missae keep the place name; only the link to the place goes away.
+  function deleteVenue(id) {
+    return run(supabase.from("user_venues").delete().eq("id", id));
+  }
+
+  // ---- Search (PRD 4.13)
+  let periodsCache = null;
+
+  async function periods() {
+    if (!periodsCache) {
+      periodsCache = await run(
+        supabase.from("musical_periods").select("code,name_en,name_ko,start_year,end_year,sort_order").order("sort_order")
+      ).catch((error) => {
+        if (isMissingRelation(error)) return [];
+        throw error;
+      });
+    }
+    return periodsCache;
+  }
+
+  function searchScores(filters, { sort = "title", descending = false, offset = 0 } = {}) {
+    return run(
+      supabase.rpc("search_scores", {
+        p_filters: filters,
+        p_sort: sort,
+        p_descending: descending,
+        p_limit: SEARCH_PAGE_SIZE,
+        p_offset: offset
+      })
+    );
+  }
+
+  function searchHistory(filters, { descending = true, offset = 0 } = {}) {
+    return run(
+      supabase.rpc("search_history", {
+        p_filters: filters,
+        p_descending: descending,
+        p_limit: SEARCH_PAGE_SIZE,
+        p_offset: offset
+      })
+    );
+  }
+
+  async function scoreComposers() {
+    const rows = await run(supabase.from("owned_scores").select("composer_name").eq("status", "ready").limit(1000));
+    const names = new Map();
+    for (const row of rows) {
+      const name = row.composer_name?.trim();
+      if (name && !names.has(name.toLowerCase())) names.set(name.toLowerCase(), name);
+    }
+    return [...names.values()].sort((a, b) => a.localeCompare(b, "ko"));
+  }
+
+  async function observanceNames() {
+    const rows = await run(
+      supabase.from("liturgical_observances").select("name_en,name_ko,season_code").eq("calendar_code", "KR").limit(2000)
+    );
+    const names = new Map();
+    for (const row of rows) {
+      const name = row.name_en?.trim() || row.name_ko?.trim();
+      if (name && !names.has(name)) names.set(name, { name, season_code: row.season_code });
+    }
+    return [...names.values()].sort((a, b) => a.name.localeCompare(b.name, "en"));
+  }
+
+  async function searchView() {
+    try {
+      const rows = await run(supabase.from("saved_views").select("layout_config").eq("view_type", "search").limit(1));
+      return rows[0]?.layout_config ?? null;
+    } catch (error) {
+      if (isMissingRelation(error)) return null;
+      throw error;
+    }
+  }
+
+  function saveSearchView(config) {
+    return run(
+      supabase.from("saved_views").upsert({ view_type: "search", layout_config: config }, { onConflict: "user_id,view_type" })
+    );
+  }
+
   return {
     roles,
     observancesBetween,
@@ -538,6 +706,21 @@ export function createDb(supabase) {
     download,
     scoreFiles,
     setPageNumbers,
-    removeScoreFiles
+    removeScoreFiles,
+    setNotPlayed,
+    setEntryNote,
+    scorePerformances,
+    performanceNotes,
+    venues,
+    createVenue,
+    updateVenue,
+    deleteVenue,
+    periods,
+    searchScores,
+    searchHistory,
+    scoreComposers,
+    observanceNames,
+    searchView,
+    saveSearchView
   };
 }

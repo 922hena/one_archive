@@ -137,7 +137,8 @@ function dayPanel(ctx, { selected, observances, masses, roles, layouts, venues }
         type: "button",
         class: "solid-button",
         onclick: async () => {
-          const savedId = await openMassForm(ctx, { date: selected, observances, roles, layouts, venues });
+          const places = await ctx.db.venues().catch(() => []);
+          const savedId = await openMassForm(ctx, { date: selected, observances, roles, layouts, venues, places });
           if (savedId) {
             notify(t("mass.created"), "success");
             ctx.navigate(`#/mass/${savedId}`);

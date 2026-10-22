@@ -54,6 +54,14 @@ export function formatLongDate(iso) {
   return t("format.longDate", { ...parts, weekday: weekdayName(weekdayIndex(iso)) });
 }
 
+// Dense lists and filter chips: "2025. 3. 30.(일)", or without the weekday.
+export function formatShortDate(iso, { weekday = true } = {}) {
+  const parts = parseIsoDate(iso);
+  if (!parts) return "";
+  const date = t("format.shortDate", parts);
+  return weekday ? `${date}(${weekdayShort(weekdayIndex(iso))})` : date;
+}
+
 export function formatMonthTitle(year, month) {
   return t("format.monthTitle", { year, month });
 }

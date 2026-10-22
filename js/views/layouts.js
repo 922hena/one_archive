@@ -1,5 +1,5 @@
 import { t } from "../i18n.js";
-import { h, confirmDialog, errorMessage, notify, setBusy } from "../ui.js";
+import { h, actionMenu, confirmDialog, createDialog, errorMessage, notify, setBusy } from "../ui.js";
 
 // Music items are shown in Latin; Korean and English names stay in the data for search.
 export function roleLabel(role) {
@@ -90,8 +90,143 @@ const NEW_LAYOUT = "new";
 // Remembered while the screen redraws after a save.
 let chosenLayoutId = null;
 
+const samePlaceName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+function layoutOptions(layouts, selectedId) {
+  return [
+    h("option", { value: "", selected: !selectedId }, t("places.noLayout")),
+    layouts.map((item) => h("option", { value: item.id, selected: item.id === selectedId, translate: "no" }, item.name))
+  ];
+}
+
+function renamePlace(ctx, place, places) {
+  const { body, footer, close, setStatus } = createDialog(t("places.renameTitle"));
+  const inputId = `place-name-${place.id}`;
+  const input = h("input", { id: inputId, type: "text", maxlength: 100, value: place.name });
+  body.append(
+    h("div", { class: "field" }, h("label", { for: inputId, text: t("places.name") }), input),
+    h("p", { class: "hint", text: t("places.renameHint") })
+  );
+  const saveButton = h("button", { type: "button", class: "solid-button" }, t("common.save"));
+  footer.append(h("button", { type: "button", class: "ghost-button", onclick: close }, t("common.cancel")), saveButton);
+  saveButton.addEventListener("click", async () => {
+    const name = input.value.trim();
+    if (!name) {
+      setStatus(t("places.nameRequired"));
+      input.focus();
+      return;
+    }
+    if (places.some((item) => item.id !== place.id && samePlaceName(item.name, name))) {
+      setStatus(t("places.duplicate"));
+      input.focus();
+      return;
+    }
+    setBusy([saveButton], true);
+    try {
+      await ctx.db.updateVenue(place, { name });
+      close();
+      notify(t("places.saved"), "success");
+      ctx.refresh();
+    } catch (error) {
+      setStatus(errorMessage(error, "places.saveFailed", { 23505: "places.duplicate" }));
+      setBusy([saveButton], false);
+    }
+  });
+  input.select();
+}
+
+async function removePlace(ctx, place) {
+  const ok = await confirmDialog(t("places.deleteConfirm", { name: place.name }), { confirmLabel: t("common.delete"), danger: true });
+  if (!ok) return;
+  try {
+    await ctx.db.deleteVenue(place.id);
+    notify(t("places.deleted"), "success");
+    ctx.refresh();
+  } catch (error) {
+    notify(errorMessage(error, "places.deleteFailed"), "error");
+  }
+}
+
+// My Places (decision D3): each place opens a Missa with one saved selection of Music Parts.
+function placesSection(ctx, places, layouts) {
+  const rows = places.map((place) => {
+    const select = h("select", { "aria-label": t("places.layoutFor", { name: place.name }) }, layoutOptions(layouts, place.layout_id));
+    select.addEventListener("change", async () => {
+      select.disabled = true;
+      try {
+        await ctx.db.updateVenue(place, { layout_id: select.value || null });
+        place.layout_id = select.value || null;
+        notify(t("places.saved"), "success");
+      } catch (error) {
+        select.value = place.layout_id ?? "";
+        notify(errorMessage(error, "places.saveFailed"), "error");
+      } finally {
+        select.disabled = false;
+      }
+    });
+    return h("li", { class: "place-row" },
+      h("span", { class: "place-name", translate: "no", text: place.name }),
+      select,
+      actionMenu(t("places.moreFor", { name: place.name }), [
+        { label: t("places.rename"), onSelect: () => renamePlace(ctx, place, places) },
+        { label: t("places.delete"), danger: true, onSelect: () => removePlace(ctx, place) }
+      ])
+    );
+  });
+
+  const nameId = "place-new-name";
+  const layoutId = "place-new-layout";
+  const nameInput = h("input", { id: nameId, type: "text", maxlength: 100, placeholder: t("places.namePlaceholder") });
+  const layoutSelect = h("select", { id: layoutId }, layoutOptions(layouts, null));
+  const addButton = h("button", { type: "button", class: "ghost-button" }, t("places.add"));
+  const status = h("p", { class: "sheet-status", role: "status", hidden: true });
+  const setStatus = (message) => {
+    status.textContent = message ?? "";
+    status.hidden = !message;
+  };
+  async function addPlace() {
+    const name = nameInput.value.trim();
+    if (!name) {
+      setStatus(t("places.nameRequired"));
+      nameInput.focus();
+      return;
+    }
+    if (places.some((item) => samePlaceName(item.name, name))) {
+      setStatus(t("places.duplicate"));
+      nameInput.focus();
+      return;
+    }
+    setBusy([addButton], true);
+    setStatus("");
+    try {
+      await ctx.db.createVenue(name, layoutSelect.value || null);
+      notify(t("places.added"), "success");
+      ctx.refresh();
+    } catch (error) {
+      setStatus(errorMessage(error, "places.saveFailed"));
+      setBusy([addButton], false);
+    }
+  }
+  addButton.addEventListener("click", addPlace);
+  nameInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.isComposing) addPlace();
+  });
+
+  return h("section", { class: "layout-card places-card", "aria-labelledby": "places-heading" },
+    h("h2", { id: "places-heading", text: t("places.heading") }),
+    h("p", { class: "hint", text: t("places.lead") }),
+    rows.length ? h("ul", { class: "place-list" }, rows) : h("p", { class: "empty", text: t("places.empty") }),
+    h("div", { class: "place-add" },
+      h("div", { class: "field" }, h("label", { for: nameId, text: t("places.name") }), nameInput),
+      h("div", { class: "field" }, h("label", { for: layoutId, text: t("places.layout") }), layoutSelect),
+      addButton
+    ),
+    status
+  );
+}
+
 export async function renderLayouts(container, ctx) {
-  const [roles, layouts] = await Promise.all([ctx.db.roles(), ctx.db.layouts()]);
+  const [roles, layouts, places] = await Promise.all([ctx.db.roles(), ctx.db.layouts(), ctx.db.venues()]);
   let layout = layouts.find((item) => item.id === chosenLayoutId) ?? layouts[0] ?? null;
   chosenLayoutId = layout?.id ?? NEW_LAYOUT;
 
@@ -191,6 +326,7 @@ export async function renderLayouts(container, ctx) {
       h("div", { class: "layout-parts" }, h("h2", { text: t("layouts.partes") }), partsBox),
       status,
       h("div", { class: "layout-actions" }, saveButton, deleteButton)
-    )
+    ),
+    placesSection(ctx, places, layouts)
   );
 }

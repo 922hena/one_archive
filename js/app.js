@@ -8,6 +8,7 @@ import { renderHome } from "./views/home.js";
 import { renderMass } from "./views/mass.js";
 import { renderLibrary } from "./views/library.js";
 import { renderLayouts } from "./views/layouts.js";
+import { renderSearch } from "./views/search.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -16,7 +17,9 @@ let routeToken = 0;
 let lastHash = null;
 
 function parseRoute(hash) {
-  const [name, param] = hash.replace(/^#\/?/, "").split("/");
+  const [path, query = ""] = hash.replace(/^#\/?/, "").split("?");
+  const [name, param] = path.split("/");
+  if (name === "search") return { nav: "search", render: renderSearch, params: { query } };
   if (name === "mass" && UUID.test(param ?? "")) return { nav: "home", render: renderMass, params: { id: param } };
   if (name === "library") return { nav: "library", render: renderLibrary, params: {} };
   if (name === "layouts") return { nav: "home", render: renderLayouts, params: {} };
@@ -75,9 +78,6 @@ async function boot() {
       notify(t("errors.logoutFailed"), "error");
     }
   });
-
-  // Search is not built yet; the tab only explains that.
-  document.querySelector('[data-action="search"]')?.addEventListener("click", () => notify(t("home.searchSoon")));
 
   const ctx = {
     supabase,

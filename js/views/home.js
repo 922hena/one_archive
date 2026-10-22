@@ -1,6 +1,6 @@
 import { t } from "../i18n.js";
 import { colorAbbr, colorSwatch, formatLongDate, formatTime, monthGrid, observanceTitle, parseIsoDate, todayIso } from "../format.js";
-import { h, colorDot, notify } from "../ui.js";
+import { h, colorDot } from "../ui.js";
 import { calendarCard } from "./calendar.js";
 import { openUploadDialog } from "./library.js";
 import { massTitle } from "./mass.js";
@@ -119,7 +119,7 @@ export async function renderHome(container, ctx, { date }) {
       h("h2", { class: "quick-head", text: t("home.quickActions") }),
       h("div", { class: "quick-grid" },
         quickCard("add", t("home.addScore"), t("home.addScoreHint"), () => openUploadDialog(ctx)),
-        quickCard("search", t("home.search"), t("home.searchHint"), () => notify(t("home.searchSoon")))
+        quickCard("search", t("home.search"), t("home.searchHint"), () => ctx.navigate("#/search"))
       )
     )
   );

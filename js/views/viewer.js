@@ -28,6 +28,31 @@ function loadPdfJs() {
   return pdfjsPromise;
 }
 
+// First page only, drawn on demand for search previews. No thumbnail file is stored.
+export async function renderThumbnail(ctx, file, width = 160) {
+  if (file.mime_type !== "application/pdf") {
+    const img = h("img", { alt: "", draggable: "false" });
+    img.src = await ctx.db.signedUrl(file.storage_path);
+    await img.decode().catch(() => {});
+    return img;
+  }
+  const [lib, blob] = await Promise.all([loadPdfJs(), ctx.db.download(file.storage_path)]);
+  const doc = await lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
+  try {
+    const page = await doc.getPage(1);
+    const base = page.getViewport({ scale: 1 });
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    const viewport = page.getViewport({ scale: (width / base.width) * pixelRatio });
+    const canvas = h("canvas", { "aria-hidden": "true" });
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    return canvas;
+  } finally {
+    doc.destroy();
+  }
+}
+
 // Opens a short-lived signed URL. The tab is opened before awaiting so popup blockers allow it.
 export async function openOriginal(ctx, file) {
   const tab = window.open("about:blank", "_blank");

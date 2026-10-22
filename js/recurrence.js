@@ -63,11 +63,13 @@ export function offWeekday(rows, weekday) {
 }
 
 // Plain rows start selected; careful rows (linked Score or edited by hand) are picked one by one;
+// played rows (past Missae with played songs, decision D1) are picked one by one after a warning;
 // recorded rows have a performance record and the database refuses to delete them.
 export function deletionGroups(rows) {
-  const groups = { plain: [], careful: [], recorded: [] };
+  const groups = { plain: [], careful: [], played: [], recorded: [] };
   for (const row of rows) {
     if (row.recorded) groups.recorded.push(row);
+    else if (row.played > 0) groups.played.push(row);
     else if (row.linked || row.series_locked) groups.careful.push(row);
     else groups.plain.push(row);
   }

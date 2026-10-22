@@ -449,6 +449,8 @@ hymnals ──< hymnal_entries >── works [optional, 곡 식별 체계 고려
 
 **핵심:** 과거 날짜의 미사로 자동 전환했다고 모든 배정곡을 `confirmed`로 표시하지 않는다. 이벤트가 `completed`여도 곡별 연주 확인은 별도다.
 
+> **[결정 D1 — PRD 4.13.12, 2026-10-22]** 위 원칙 대신 다음 규칙을 쓴다. 미사 날짜 다음 날 0시(한국 시간)부터 취소되지 않은 미사에 연결된 곡은 모두 연주한 것으로 센다. 사용자는 연주하지 않은 곡만 `Not played`로 표시한다(`mass_music_entries.not_played_at`). 연주 여부는 저장하지 않고 뷰 `performed_entries`로 계산하며, 검색 횟수와 악보별 연주 이력이 이 뷰를 함께 쓴다(마이그레이션 `20261022150000_search_played_and_places.sql`). `performance_confirmations`는 지우지 않고 비워 둔다. 0회 검색은 결정 D2에 따라 내 악보 전체를 기준으로 비교한다(10.3).
+
 ### 9.2 `performance_confirmations` — 확인된 실제 연주 사용
 
 | 컬럼(제안) | 역할 |

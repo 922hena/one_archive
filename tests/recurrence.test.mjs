@@ -105,6 +105,18 @@ test("deletion groups: plain pre-selected, linked or edited chosen one by one, r
   assert.deepEqual(groups.plain.map((row) => row.id), ["a"]);
   assert.deepEqual(groups.careful.map((row) => row.id), ["b", "c"]);
   assert.deepEqual(groups.recorded.map((row) => row.id), ["d"]);
+  assert.deepEqual(groups.played, []);
+});
+
+test("deletion groups: past Missae with played songs get their own group", () => {
+  const groups = deletionGroups([
+    { id: "past", linked: true, series_locked: false, played: 2, recorded: false },
+    { id: "past-not-played", linked: true, series_locked: false, played: 0, recorded: false },
+    { id: "past-recorded", linked: true, series_locked: false, played: 1, recorded: true }
+  ]);
+  assert.deepEqual(groups.played.map((row) => row.id), ["past"]);
+  assert.deepEqual(groups.careful.map((row) => row.id), ["past-not-played"]);
+  assert.deepEqual(groups.recorded.map((row) => row.id), ["past-recorded"]);
 });
 
 test("isMissingRelation matches missing-table codes only, not a message that mentions mass_series", () => {

@@ -10,9 +10,11 @@ import {
   massLiturgyTitle,
   observanceTitle,
   sortBySlotNo,
+  todayIso,
   weekdayIndex,
   weekdayName
 } from "../format.js";
+import { countsAsPlayed, entryPlayed, playedEntries } from "../played.js";
 import { h, actionMenu, createDialog, confirmDialog, errorMessage, notify, setBusy, colorDot, displayScoreTitle } from "../ui.js";
 import { roleChecklist, layoutSelection, roleLabel } from "./layouts.js";
 import {
@@ -89,7 +91,11 @@ function timeControls(startTime) {
 }
 
 // Create needs date + observances + layouts + roles. Edit needs mass.
-export function openMassForm(ctx, { date, observances = [], roles = [], layouts = [], venues = [], series = null, mass = null }) {
+// places: My Places (user_venues). venues: older place names typed before My Places existed.
+export function openMassForm(
+  ctx,
+  { date, observances = [], roles = [], layouts = [], venues = [], places = [], series = null, mass = null }
+) {
   const editing = Boolean(mass);
   const formDate = editing ? mass.local_date : date;
   const uid = Math.random().toString(36).slice(2);
@@ -107,6 +113,13 @@ export function openMassForm(ctx, { date, observances = [], roles = [], layouts 
     value: mass?.venue_name ?? "",
     placeholder: t("mass.venuePlaceholder")
   });
+  const venueHint = h("p", { class: "hint", role: "status" });
+  const knownPlaces = [...places];
+  const placeFor = (name) => {
+    const key = String(name ?? "").trim().toLowerCase();
+    return key ? knownPlaces.find((place) => place.name.trim().toLowerCase() === key) ?? null : null;
+  };
+  const venueNames = [...knownPlaces.map((place) => place.name), ...venues.filter((name) => !placeFor(name))];
   const notesInput = h("textarea", { rows: 2, maxlength: 1000 }, mass?.notes ?? "");
 
   const choiceName = `liturgy-${uid}`;
@@ -246,6 +259,17 @@ export function openMassForm(ctx, { date, observances = [], roles = [], layouts 
   // Layout and recurrence belong to a series; a one-off Mass edits its items in the Mass page.
   const showSeriesFields = !editing || Boolean(series);
 
+  // A place opens with its Music Parts; the member can still change them for this Missa.
+  venueInput.addEventListener("change", () => {
+    venueHint.textContent = "";
+    const place = placeFor(venueInput.value);
+    const layout = knownLayouts.find((item) => item.id === place?.layout_id);
+    if (!layout || !showSeriesFields || layoutSelect.disabled || layoutSelect.value === layout.id) return;
+    layoutSelect.value = layout.id;
+    layoutSelect.dispatchEvent(new Event("change"));
+    venueHint.textContent = t("mass.placeLayoutApplied", { name: layout.name });
+  });
+
   // Native append would print a skipped (null) field as the text "null".
   body.append(...[
     h("fieldset", { class: "field choices form-liturgy" },
@@ -262,7 +286,8 @@ export function openMassForm(ctx, { date, observances = [], roles = [], layouts 
     h("label", { class: "field" },
       h("span", { text: t("mass.venueLabel") }),
       venueInput,
-      h("datalist", { id: venueListId }, venues.map((name) => h("option", { value: name })))
+      h("datalist", { id: venueListId }, venueNames.map((name) => h("option", { value: name }))),
+      venueHint
     ),
     showSeriesFields ? h("label", { class: "field" }, h("span", { text: t("mass.layoutLabel") }), layoutSelect) : null,
     showSeriesFields ? layoutNameField : null,
@@ -305,10 +330,21 @@ export function openMassForm(ctx, { date, observances = [], roles = [], layouts 
     return {
       title: titleInput.value.trim() || null,
       start_time: time.value(),
-      venue_name: venueInput.value.trim() || null,
       notes: notesInput.value.trim() || null,
       ...liturgyPayload()
     };
+  }
+
+  // A new name becomes a place in My Places, linked to the Music Parts chosen now.
+  async function venueFields(layoutId) {
+    const name = venueInput.value.trim();
+    if (!name) return { venue_id: null, venue_name: null };
+    let place = placeFor(name);
+    if (!place) {
+      place = await ctx.db.createVenue(name, layoutId || null);
+      knownPlaces.push(place);
+    }
+    return { venue_id: place.id, venue_name: place.name };
   }
 
   return new Promise((resolve) => {
@@ -330,6 +366,7 @@ export function openMassForm(ctx, { date, observances = [], roles = [], layouts 
           const scope = !series || scopeThis.checked ? "this" : scopeAll.checked ? "all" : "future";
           if (scope === "this") {
             if (series) fields.series_locked = true;
+            Object.assign(fields, await venueFields(mass.layout_id));
             await ctx.db.updateMass(mass.id, fields);
             savedId = mass.id;
           } else {
@@ -342,7 +379,7 @@ export function openMassForm(ctx, { date, observances = [], roles = [], layouts 
             const patch = {
               title: fields.title,
               start_time: fields.start_time,
-              venue_name: fields.venue_name,
+              ...(await venueFields(layoutSelect.value || null)),
               layout_id: layoutSelect.value || null
             };
             // A new weekday starts from this date, so past weeks are not filled in on the new day.
@@ -377,11 +414,13 @@ export function openMassForm(ctx, { date, observances = [], roles = [], layouts 
           }
           fields.local_date = formDate;
           fields.layout_id = layoutId;
+          Object.assign(fields, await venueFields(layoutId));
           if (recurrence.value !== "once") {
             const created = await ctx.db.createSeries({
               title: fields.title,
               start_time: fields.start_time,
               venue_name: fields.venue_name,
+              venue_id: fields.venue_id,
               layout_id: layoutId,
               weekday: Number(weekday.value),
               interval_weeks: Number(recurrence.value),
@@ -477,10 +516,13 @@ async function openLinkPicker(ctx, slot, itemName) {
   );
 }
 
-async function unlinkEntry(ctx, entry, itemName) {
+// played: the song counts as played (decision D1), so unlinking also takes it out of the history.
+async function unlinkEntry(ctx, entry, itemName, played = false) {
   const score = entry.owned_scores;
-  const ok = await confirmDialog(t("mass.unlinkConfirm", { title: displayScoreTitle(score), item: itemName }), {
-    confirmLabel: t("mass.unlink")
+  const key = played ? "mass.unlinkPlayedConfirm" : "mass.unlinkConfirm";
+  const ok = await confirmDialog(t(key, { title: displayScoreTitle(score), item: itemName }), {
+    confirmLabel: t("mass.unlink"),
+    danger: played
   });
   if (!ok) return;
   try {
@@ -490,6 +532,43 @@ async function unlinkEntry(ctx, entry, itemName) {
   } catch (error) {
     notify(errorMessage(error, "mass.unlinkFailed"), "error");
   }
+}
+
+async function toggleNotPlayed(ctx, entry) {
+  const marking = !entry.not_played_at;
+  try {
+    await ctx.db.setNotPlayed(entry.id, marking);
+    notify(t(marking ? "mass.markedNotPlayed" : "mass.markedPlayed", { title: displayScoreTitle(entry.owned_scores) }), "success");
+    ctx.refresh();
+  } catch (error) {
+    notify(errorMessage(error, "mass.playedFailed"), "error");
+  }
+}
+
+function openEntryNote(ctx, entry, itemName) {
+  const { body, footer, close, setStatus } = createDialog(t("mass.entryNoteTitle"));
+  const inputId = `entry-note-${entry.id}`;
+  const input = h("textarea", { id: inputId, rows: 4, maxlength: 2000 }, entry.note ?? "");
+  body.append(
+    h("p", { class: "meta", translate: "no", text: `${itemName} · ${displayScoreTitle(entry.owned_scores)}` }),
+    h("div", { class: "field" }, h("label", { for: inputId, text: t("mass.entryNoteLabel") }), input),
+    h("p", { class: "hint", text: t("mass.entryNoteHint") })
+  );
+  const saveButton = h("button", { type: "button", class: "solid-button" }, t("common.save"));
+  footer.append(h("button", { type: "button", class: "ghost-button", onclick: close }, t("common.cancel")), saveButton);
+  saveButton.addEventListener("click", async () => {
+    setBusy([saveButton], true);
+    try {
+      await ctx.db.setEntryNote(entry.id, input.value);
+      close();
+      notify(t("mass.entryNoteSaved"), "success");
+      ctx.refresh();
+    } catch (error) {
+      setStatus(errorMessage(error, "mass.entryNoteFailed"));
+      setBusy([saveButton], false);
+    }
+  });
+  input.focus();
 }
 
 // Resolves with the ids to delete ([] only when noneLabel allows it), or null when closed.
@@ -504,7 +583,7 @@ function pickMasses(rows, { title, lead, cancelLabel, noneLabel = null }) {
       const notes = [
         formatTime(item.start_time),
         massTitle(item),
-        item.linked ? t("mass.pickLinkedTag") : null,
+        item.played ? t("mass.pickPlayedTag", { count: item.played }) : item.linked ? t("mass.pickLinkedTag") : null,
         item.series_locked ? t("mass.pickEditedTag") : null
       ].filter(Boolean);
       return h("li", {},
@@ -528,6 +607,7 @@ function pickMasses(rows, { title, lead, cancelLabel, noneLabel = null }) {
       h("p", { class: "sheet-message", text: lead }),
       group("mass.pickPlainHead", groups.plain, { checked: true }),
       group("mass.pickCarefulHead", groups.careful),
+      group("mass.pickPlayedHead", groups.played),
       group("mass.pickRecordedHead", groups.recorded, { disabled: true })
     ].filter(Boolean));
 
@@ -541,8 +621,18 @@ function pickMasses(rows, { title, lead, cancelLabel, noneLabel = null }) {
     };
     body.addEventListener("change", update);
     update();
-    deleteButton.addEventListener("click", () => {
-      answer = chosen();
+    deleteButton.addEventListener("click", async () => {
+      const ids = chosen();
+      const played = groups.played.filter((item) => ids.includes(item.id));
+      if (played.length) {
+        const songs = played.reduce((sum, item) => sum + item.played, 0);
+        const ok = await confirmDialog(t("mass.pickPlayedConfirm", { count: played.length, songs }), {
+          confirmLabel: t("common.delete"),
+          danger: true
+        });
+        if (!ok) return;
+      }
+      answer = ids;
       close();
     });
     footer.append(h("button", { type: "button", class: "ghost-button", onclick: close }, cancelLabel), deleteButton);
@@ -613,12 +703,19 @@ async function removeMass(ctx, mass) {
     notify(errorMessage(error, "mass.deleteFailed"), "error");
     return;
   }
+  // PRD 8.37: deleting a past Missa also deletes its performance history, so say so first.
+  const played = playedEntries(mass, todayIso()).length;
+  const playedMessage = t("mass.deletePlayedConfirm", { title: massTitle(mass), count: played });
   if (!series) {
-    const ok = await confirmDialog(t("mass.deleteConfirm", { title: massTitle(mass) }), { confirmLabel: t("common.delete"), danger: true });
+    const message = played ? playedMessage : t("mass.deleteConfirm", { title: massTitle(mass) });
+    const ok = await confirmDialog(message, { confirmLabel: t("common.delete"), danger: true });
     if (!ok) return;
   }
   const scope = series ? await chooseDeleteScope(mass) : "this";
   if (!scope) return;
+  if (series && scope === "this" && played) {
+    if (!(await confirmDialog(playedMessage, { confirmLabel: t("common.delete"), danger: true }))) return;
+  }
   try {
     if (scope === "this") {
       await ctx.db.forgetOccurrence(mass);
@@ -668,12 +765,13 @@ export async function renderMass(container, ctx, { id }) {
   const layout = layouts.find((item) => item.id === mass.layout_id) ?? null;
 
   async function editMass() {
-    const [observances, venues, series] = await Promise.all([
+    const [observances, venues, places, series] = await Promise.all([
       observancesFor(ctx, mass.local_date),
       ctx.db.usedVenues(),
+      ctx.db.venues(),
       ctx.db.series(mass.series_id)
     ]);
-    const savedId = await openMassForm(ctx, { mass, observances, roles, layouts, venues, series });
+    const savedId = await openMassForm(ctx, { mass, observances, roles, layouts, venues, places, series });
     if (savedId) {
       notify(t("mass.saved"), "success");
       ctx.refresh();
@@ -711,6 +809,10 @@ export async function renderMass(container, ctx, { id }) {
     )
   );
 
+  // Decision D1: from the day after the Missa, linked songs count as played unless marked "Not played".
+  const today = todayIso();
+  const past = countsAsPlayed(mass, today);
+
   // One row per linked score. Extra scores of the same item reuse the grid with empty number/role cells.
   const musicRows = slots.flatMap((slot) => {
     const role = roleById.get(slot.role_id);
@@ -735,9 +837,13 @@ export async function renderMass(container, ctx, { id }) {
       const actions = entry
         ? [
             { label: t("mass.openScore"), onSelect: () => openViewer(ctx, score) },
-            { label: t("mass.unlink"), onSelect: () => unlinkEntry(ctx, entry, itemName) },
+            past
+              ? { label: t(entry.not_played_at ? "mass.markPlayed" : "mass.markNotPlayed"), onSelect: () => toggleNotPlayed(ctx, entry) }
+              : null,
+            { label: t(entry.note ? "mass.editEntryNote" : "mass.addEntryNote"), onSelect: () => openEntryNote(ctx, entry, itemName) },
+            { label: t("mass.unlink"), onSelect: () => unlinkEntry(ctx, entry, itemName, entryPlayed(mass, entry, today)) },
             ...slotActions
-          ]
+          ].filter(Boolean)
         : slotActions;
       return h("li", { class: "music-row" },
         index === 0 ? h("span", { class: "music-no num", text: number }) : blank(),
@@ -747,7 +853,15 @@ export async function renderMass(container, ctx, { id }) {
         entry
           ? h("div", { class: "music-work", translate: "no" },
               h("button", { type: "button", class: "music-title", onclick: () => openViewer(ctx, score) }, displayScoreTitle(score)),
-              score?.composer_name ? h("span", { class: "music-composer", text: score.composer_name }) : null
+              score?.composer_name || (past && entry.not_played_at)
+                ? h("span", { class: "music-composer" },
+                    score?.composer_name ? h("span", { text: score.composer_name }) : null,
+                    past && entry.not_played_at
+                      ? h("span", { class: "music-flag", translate: "yes", text: t("mass.notPlayedTag") })
+                      : null
+                  )
+                : null,
+              entry.note ? h("span", { class: "music-note", text: entry.note }) : null
             )
           : h("div", { class: "music-work is-empty" }, h("span", { class: "music-title", text: t("mass.noScore") })),
         actionMenu(t("mass.moreFor", { item: itemName }), actions)
@@ -756,8 +870,10 @@ export async function renderMass(container, ctx, { id }) {
     return entries.length ? entries.map(rowFor) : [rowFor(null, 0)];
   });
 
+  const hasEntries = slots.some((slot) => (slot.mass_music_entries ?? []).length);
   const music = h("section", { class: "mass-music" },
     h("h2", { text: t("mass.musicaMissae") }),
+    past && hasEntries ? h("p", { class: "hint", text: t("mass.playedHint") }) : null,
     slots.length ? h("ol", { class: "music-list" }, musicRows) : h("p", { class: "empty", text: t("mass.noItems") })
   );
 
