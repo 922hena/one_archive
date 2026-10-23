@@ -159,3 +159,32 @@ export function viewSeconds(times, fallback) {
 export function pageTimeKey(page) {
   return `${page.file.id}:${page.pdfPage ?? 0}`;
 }
+
+// ---- on-screen buttons and brightness (kept on this device, one set per screen orientation) ----
+
+export const NAV_SIZES = {
+  small: { w: 36, h: 56 },
+  medium: { w: 44, h: 72 },
+  large: { w: 64, h: 104 }
+};
+
+function inRange(value, min, max, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.round(number))) : fallback;
+}
+
+// Saved settings -> safe settings. `touch` = the device is used by touch (arrows start hidden there,
+// because swipe and tap already turn pages).
+export function normalizeDisplay(saved, touch = false) {
+  const source = saved && typeof saved === "object" ? saved : {};
+  return {
+    arrows: typeof source.arrows === "boolean" ? source.arrows : !touch,
+    size: Object.hasOwn(NAV_SIZES, source.size) ? source.size : "medium",
+    opacity: inRange(source.opacity, 20, 100, 100),
+    brightness: inRange(source.brightness, 40, 100, 100)
+  };
+}
+
+export function orientationOf(width, height) {
+  return height > width ? "portrait" : "landscape";
+}

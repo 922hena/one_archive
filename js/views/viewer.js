@@ -6,6 +6,7 @@ import {
   AUTO_MAX,
   AUTO_MIN,
   MAX_PER_VIEW,
+  NAV_SIZES,
   ZOOM_MAX,
   ZOOM_STEP,
   clampPan,
@@ -16,6 +17,8 @@ import {
   gridFor,
   locatePage,
   nextIndex,
+  normalizeDisplay,
+  orientationOf,
   pageTimeKey,
   parseSeconds,
   prevIndex,
@@ -38,6 +41,7 @@ const PREV_KEYS = new Set(["ArrowLeft", "ArrowUp", "PageUp"]);
 
 const PREFS_KEY = "yearscore-perform";
 const TIMES_KEY = "yearscore-perform-times";
+const DISPLAY_KEY = "yearscore-perform-display";
 
 let pdfjsPromise = null;
 
@@ -66,7 +70,8 @@ function loadPrefs() {
   return {
     // older versions saved only "two pages on/off"
     perView: clampPerView(saved.perView ?? (saved.twoUp === true ? 2 : 1)),
-    autoDefault: fallback.ok && fallback.value ? fallback.value : AUTO_DEFAULT
+    autoDefault: fallback.ok && fallback.value ? fallback.value : AUTO_DEFAULT,
+    locked: saved.locked === true
   };
 }
 
@@ -166,7 +171,12 @@ export function openPerformance(ctx, { title, songs }) {
   let perView = prefs.perView; // pages on one screen, 1 to 4
   let zoom = 1;
   let pan = { x: 0, y: 0 };
+  let locked = prefs.locked; // view settings can't be changed by accident while performing
+  const coarse = window.matchMedia("(pointer: coarse)").matches;
+  const display = readJson(DISPLAY_KEY); // { portrait: {...}, landscape: {...} }
+  let displayOpen = false;
   let autoOn = false; // always starts off, so pages never turn by surprise
+  let autoPaused = false;
   let autoDefault = prefs.autoDefault;
   const pageTimes = readJson(TIMES_KEY); // seconds per page; a page without one uses autoDefault
   let autoTimer = null;
@@ -222,6 +232,7 @@ export function openPerformance(ctx, { title, songs }) {
   );
   const autoButton = h("button", { type: "button", class: "viewer-tool", "aria-pressed": "false", "aria-expanded": "false", onclick: () => toggleAutoPanel() }, t("perform.autoButton"));
   const autoStart = h("button", { type: "button", class: "viewer-tool is-primary", onclick: toggleAuto }, t("perform.autoStart"));
+  const autoStop = h("button", { type: "button", class: "viewer-tool", hidden: true, onclick: stopAuto }, t("perform.autoStop"));
   const autoDefaultInput = secondsInput("auto-default", t("perform.autoDefault"), formatSeconds(autoDefault), onDefaultChange);
   const autoRows = h("div", { class: "auto-rows" });
   const autoPanel = h("section", { class: "viewer-auto", "aria-label": t("perform.autoTitle"), hidden: true },
@@ -230,7 +241,7 @@ export function openPerformance(ctx, { title, songs }) {
       h("button", { type: "button", class: "viewer-tool", onclick: () => toggleAutoPanel(false) }, t("common.close"))
     ),
     h("div", { class: "auto-body" },
-      h("div", { class: "auto-line" }, autoStart),
+      h("div", { class: "auto-line" }, autoStart, autoStop),
       h("div", { class: "auto-line" },
         h("label", { for: "auto-default", text: t("perform.autoDefault") }),
         autoDefaultInput,
@@ -240,10 +251,39 @@ export function openPerformance(ctx, { title, songs }) {
       h("p", { class: "auto-hint", text: t("perform.autoHint") })
     )
   );
-  const stage = h("div", { class: "viewer-stage" }, holder, prevButton, nextButton, notice, lineupPanel, autoPanel);
+  // Display panel: arrows, their size and opacity, page brightness. Saved per screen orientation.
+  const arrowsInput = h("input", { type: "checkbox", id: "display-arrows", class: "display-check", onchange: () => changeDisplay({ arrows: arrowsInput.checked }) });
+  const sizeButtons = Object.keys(NAV_SIZES).map((size) =>
+    h("button", {
+      type: "button",
+      class: "viewer-tool",
+      "aria-label": t(`perform.size${size[0].toUpperCase()}${size.slice(1)}Label`),
+      "aria-pressed": "false",
+      onclick: () => changeDisplay({ size })
+    }, t(`perform.size${size[0].toUpperCase()}${size.slice(1)}`))
+  );
+  const opacityInput = h("input", { type: "range", id: "display-opacity", class: "display-range", min: "20", max: "100", step: "5", "aria-label": t("perform.arrowOpacity"), oninput: () => changeDisplay({ opacity: Number(opacityInput.value) }) });
+  const brightnessInput = h("input", { type: "range", id: "display-brightness", class: "display-range", min: "40", max: "100", step: "5", "aria-label": t("perform.brightness"), oninput: () => changeDisplay({ brightness: Number(brightnessInput.value) }) });
+  const displayPanel = h("section", { class: "viewer-auto viewer-display", "aria-label": t("perform.displayTitle"), hidden: true },
+    h("div", { class: "lineup-head" },
+      h("strong", { text: t("perform.displayTitle") }),
+      h("button", { type: "button", class: "viewer-tool", onclick: () => toggleDisplayPanel(false) }, t("common.close"))
+    ),
+    h("div", { class: "auto-body" },
+      h("div", { class: "auto-line" }, h("label", { for: "display-arrows", text: t("perform.showArrows") }), arrowsInput),
+      h("div", { class: "auto-line" }, h("span", { class: "display-label", text: t("perform.arrowSize") }), h("div", { class: "viewer-view" }, ...sizeButtons)),
+      h("div", { class: "auto-line" }, h("label", { for: "display-opacity", text: t("perform.arrowOpacity") }), opacityInput),
+      h("div", { class: "auto-line" }, h("label", { for: "display-brightness", text: t("perform.brightness") }), brightnessInput),
+      h("div", { class: "auto-line" }, h("button", { type: "button", class: "viewer-tool", onclick: resetDisplay }, t("perform.displayReset"))),
+      h("p", { class: "auto-hint", text: t("perform.displayHint") })
+    )
+  );
+  const stage = h("div", { class: "viewer-stage" }, holder, prevButton, nextButton, notice, lineupPanel, autoPanel, displayPanel);
+  const displayButton = h("button", { type: "button", class: "viewer-tool", "aria-expanded": "false", onclick: () => toggleDisplayPanel() }, t("perform.displayButton"));
+  const lockButton = h("button", { type: "button", class: "viewer-tool", "aria-pressed": String(locked), onclick: toggleLock }, t(locked ? "perform.locked" : "perform.lock"));
   const offlineButton = h("button", { type: "button", class: "viewer-tool", "aria-pressed": "false", onclick: toggleOffline }, t("perform.offlineSave"));
   const tools = h("div", { class: "viewer-tools", role: "group", "aria-label": t("perform.viewTools") },
-    zoomOutButton, zoomLabel, zoomInButton, fitWidthButton, viewGroup, autoButton, offlineButton
+    zoomOutButton, zoomLabel, zoomInButton, fitWidthButton, viewGroup, autoButton, displayButton, lockButton, offlineButton
   );
   const dialog = h(
     "dialog",
@@ -393,15 +433,29 @@ export function openPerformance(ctx, { title, songs }) {
     );
   }
 
-  function toggleLineup(force) {
-    if (!multi) return;
-    lineupOpen = force ?? !lineupOpen;
-    if (lineupOpen && autoOpen) {
-      // the two panels share the right side: close the Auto turn panel quietly
+  // The Lineup, Auto turn and Display panels share the right side: only one is open at a time.
+  function closeSidePanels(keep) {
+    if (keep !== "lineup" && lineupOpen) {
+      lineupOpen = false;
+      lineupPanel.hidden = true;
+      lineupButton?.setAttribute("aria-expanded", "false");
+    }
+    if (keep !== "auto" && autoOpen) {
       autoOpen = false;
       autoPanel.hidden = true;
       autoButton.setAttribute("aria-expanded", "false");
     }
+    if (keep !== "display" && displayOpen) {
+      displayOpen = false;
+      displayPanel.hidden = true;
+      displayButton.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  function toggleLineup(force) {
+    if (!multi) return;
+    lineupOpen = force ?? !lineupOpen;
+    if (lineupOpen) closeSidePanels("lineup");
     lineupPanel.hidden = !lineupOpen;
     lineupButton.setAttribute("aria-expanded", String(lineupOpen));
     scheduleAuto(); // paused while the Lineup is open
@@ -592,8 +646,8 @@ export function openPerformance(ctx, { title, songs }) {
   function applyZoom() {
     const el = pageElement();
     zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
-    zoomOutButton.disabled = zoom <= 1;
-    zoomInButton.disabled = zoom >= ZOOM_MAX;
+    zoomOutButton.disabled = locked || zoom <= 1;
+    zoomInButton.disabled = locked || zoom >= ZOOM_MAX;
     if (!el) return;
     const { content, box } = sizes();
     pan = clampPan(pan, zoom, content, box);
@@ -602,23 +656,26 @@ export function openPerformance(ctx, { title, songs }) {
   }
 
   function setZoom(next) {
+    if (locked) return;
     zoom = clampZoom(Math.round(next * 100) / 100);
     if (zoom === 1) pan = { x: 0, y: 0 };
     applyZoom();
   }
 
   function fitWidth() {
+    if (locked) return;
     const { content, box } = sizes();
     setZoom(fitWidthZoom(content, { w: box.w - 16, h: box.h }));
   }
 
   // Pages on one screen (1 to 4). Pages are drawn smaller for more pages, so they are drawn again.
   function setPerView(count) {
+    if (locked) return;
     const next = clampPerView(count);
     if (next === perView) return;
     perView = next;
     viewButtons.forEach((button, n) => button.setAttribute("aria-pressed", String(n + 1 === perView)));
-    savePrefs({ perView, autoDefault });
+    savePrefs({ perView, autoDefault, locked });
     rendered.clear();
     show(index);
   }
@@ -664,7 +721,7 @@ export function openPerformance(ctx, { title, songs }) {
     if (value === undefined) return;
     autoDefault = value;
     autoDefaultInput.value = formatSeconds(value);
-    savePrefs({ perView, autoDefault });
+    savePrefs({ perView, autoDefault, locked });
     renderAutoRows();
     scheduleAuto();
   }
@@ -696,7 +753,7 @@ export function openPerformance(ctx, { title, songs }) {
 
   function toggleAutoPanel(force) {
     autoOpen = force ?? !autoOpen;
-    if (autoOpen && lineupOpen) toggleLineup(false);
+    if (autoOpen) closeSidePanels("auto");
     autoPanel.hidden = !autoOpen;
     autoButton.setAttribute("aria-expanded", String(autoOpen));
     if (autoOpen) {
@@ -716,7 +773,7 @@ export function openPerformance(ctx, { title, songs }) {
   function scheduleAuto() {
     clearTimeout(autoTimer);
     // paused while the Lineup is open, the screen is hidden, or a seconds box is being edited
-    if (!autoOn || closed || lineupOpen || document.hidden || typingInAutoPanel() || !pages.length) return;
+    if (!autoOn || autoPaused || closed || lineupOpen || document.hidden || typingInAutoPanel() || !pages.length) return;
     autoTimer = setTimeout(autoTick, Math.round(currentViewSeconds() * 1000));
   }
 
@@ -726,6 +783,7 @@ export function openPerformance(ctx, { title, songs }) {
     const target = nextIndex(ids, index, perView);
     if (target >= pages.length || ids[target] !== ids[index]) {
       autoOn = false;
+      autoPaused = false;
       updateAutoButton();
       flash(t("perform.autoEnded"), 3000);
       return;
@@ -734,15 +792,101 @@ export function openPerformance(ctx, { title, songs }) {
   }
 
   function updateAutoButton() {
-    autoButton.textContent = autoOn ? t("perform.autoButtonOn") : t("perform.autoButton");
+    autoButton.textContent = !autoOn ? t("perform.autoButton") : autoPaused ? t("perform.autoButtonPaused") : t("perform.autoButtonOn");
     autoButton.setAttribute("aria-pressed", String(autoOn));
-    autoStart.textContent = autoOn ? t("perform.autoStop") : t("perform.autoStart");
+    autoStart.textContent = !autoOn ? t("perform.autoStart") : autoPaused ? t("perform.autoResume") : t("perform.autoPause");
+    autoStop.hidden = !autoOn;
     scheduleAuto();
   }
 
+  // Start -> Pause -> Resume; Stop ends it. A paused or restarted timer always waits a full time
+  // for the page that is on screen, so pages never jump twice in a row.
   function toggleAuto() {
-    autoOn = !autoOn;
+    if (!autoOn) {
+      autoOn = true;
+      autoPaused = false;
+    } else {
+      autoPaused = !autoPaused;
+    }
     updateAutoButton();
+  }
+
+  function stopAuto() {
+    autoOn = false;
+    autoPaused = false;
+    updateAutoButton();
+  }
+
+  // ---- display: arrows, brightness (per orientation) ----
+  function displayKey() {
+    return orientationOf(window.innerWidth, window.innerHeight);
+  }
+
+  function currentDisplay() {
+    return normalizeDisplay(display[displayKey()], coarse);
+  }
+
+  function applyDisplay() {
+    const settings = currentDisplay();
+    const size = NAV_SIZES[settings.size];
+    dialog.style.setProperty("--nav-w", `${size.w}px`);
+    dialog.style.setProperty("--nav-h", `${size.h}px`);
+    dialog.style.setProperty("--nav-opacity", String(settings.opacity / 100));
+    dialog.classList.toggle("show-arrows", settings.arrows);
+    holder.style.filter = settings.brightness < 100 ? `brightness(${settings.brightness}%)` : "";
+    arrowsInput.checked = settings.arrows;
+    opacityInput.value = String(settings.opacity);
+    brightnessInput.value = String(settings.brightness);
+    Object.keys(NAV_SIZES).forEach((name, n) => sizeButtons[n].setAttribute("aria-pressed", String(name === settings.size)));
+  }
+
+  function changeDisplay(patch) {
+    if (locked) {
+      flash(t("perform.lockHint"));
+      applyDisplay();
+      return;
+    }
+    display[displayKey()] = { ...currentDisplay(), ...patch };
+    writeJson(DISPLAY_KEY, display);
+    applyDisplay();
+  }
+
+  function resetDisplay() {
+    if (locked) {
+      flash(t("perform.lockHint"));
+      return;
+    }
+    delete display[displayKey()];
+    writeJson(DISPLAY_KEY, display);
+    applyDisplay();
+  }
+
+  function toggleDisplayPanel(force) {
+    displayOpen = force ?? !displayOpen;
+    if (displayOpen) closeSidePanels("display");
+    displayPanel.hidden = !displayOpen;
+    displayButton.setAttribute("aria-expanded", String(displayOpen));
+    if (displayOpen) {
+      applyDisplay();
+      arrowsInput.focus();
+    } else {
+      displayButton.focus();
+    }
+  }
+
+  // ---- lock: zoom, pages on screen and display can't change by accident ----
+  function applyLock() {
+    lockButton.setAttribute("aria-pressed", String(locked));
+    lockButton.textContent = t(locked ? "perform.locked" : "perform.lock");
+    dialog.classList.toggle("is-locked", locked);
+    for (const button of [zoomOutButton, zoomLabel, zoomInButton, fitWidthButton, ...viewButtons]) button.disabled = locked;
+    if (!locked) applyZoom(); // restores the zoom-out / zoom-in limits
+  }
+
+  function toggleLock() {
+    locked = !locked;
+    savePrefs({ perView, autoDefault, locked });
+    applyLock();
   }
   // ---- save on this device ----
   async function refreshOffline() {
@@ -825,7 +969,7 @@ export function openPerformance(ctx, { title, songs }) {
     if (event.target.closest("button, .viewer-lineup, .viewer-auto")) return;
     touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
     moved = false;
-    if (touches.size === 2) {
+    if (touches.size === 2 && !locked) {
       // two fingers: pinch to zoom
       const [a, b] = [...touches.values()];
       gesture = { kind: "pinch", dist: Math.hypot(a.x - b.x, a.y - b.y), zoom };
@@ -851,7 +995,7 @@ export function openPerformance(ctx, { title, songs }) {
       return;
     }
     // one finger on a zoomed page moves the page instead of turning it
-    if (zoom > 1 && pointer?.id === event.pointerId) {
+    if (zoom > 1 && !locked && pointer?.id === event.pointerId) {
       if (Math.hypot(point.x - pointer.x, point.y - pointer.y) > TAP_PX) moved = true;
       pan = { x: pan.x + point.x - before.x, y: pan.y + point.y - before.y };
       applyZoom();
@@ -886,6 +1030,7 @@ export function openPerformance(ctx, { title, songs }) {
   function onResize() {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
+      applyDisplay(); // turning the device switches to its portrait / landscape settings
       if (!pages.some((page) => page.pdfPage)) return;
       rendered.clear();
       show(index);
@@ -922,6 +1067,7 @@ export function openPerformance(ctx, { title, songs }) {
   stage.addEventListener("wheel", (event) => {
     if (!event.ctrlKey) return;
     event.preventDefault();
+    if (locked) return;
     setZoom(zoom - event.deltaY * 0.01);
   }, { passive: false });
   window.addEventListener("resize", onResize);
@@ -929,6 +1075,11 @@ export function openPerformance(ctx, { title, songs }) {
   document.addEventListener("visibilitychange", onVisibility);
   // Esc closes the Lineup first; the viewer closes on the next Esc.
   dialog.addEventListener("cancel", (event) => {
+    if (displayOpen) {
+      event.preventDefault();
+      toggleDisplayPanel(false);
+      return;
+    }
     if (autoOpen) {
       event.preventDefault();
       toggleAutoPanel(false);
@@ -965,6 +1116,8 @@ export function openPerformance(ctx, { title, songs }) {
   keepAwake();
   loadAllSongs();
   applyZoom();
+  applyDisplay();
+  applyLock();
   refreshOffline();
   ready[0].promise.then(() => {
     if (closed) return;

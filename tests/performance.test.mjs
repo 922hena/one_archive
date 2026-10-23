@@ -111,7 +111,10 @@ import {
   fitWidthZoom,
   formatSeconds,
   gridFor,
+  NAV_SIZES,
   nextIndex,
+  normalizeDisplay,
+  orientationOf,
   pageTimeKey,
   parseSeconds,
   prevIndex,
@@ -202,4 +205,23 @@ test("a screen stays as long as its longest page; blank pages use the default", 
 test("page times are kept per file page", () => {
   assert.equal(pageTimeKey({ file: { id: "f1" }, pdfPage: 3 }), "f1:3");
   assert.equal(pageTimeKey({ file: { id: "f2" } }), "f2:0");
+});
+
+test("display settings are cleaned up and completed", () => {
+  assert.deepEqual(normalizeDisplay(undefined, false), { arrows: true, size: "medium", opacity: 100, brightness: 100 });
+  assert.equal(normalizeDisplay(undefined, true).arrows, false); // touch: swipe and tap already turn pages
+  assert.equal(normalizeDisplay({ arrows: true }, true).arrows, true);
+  assert.equal(normalizeDisplay({ size: "huge" }).size, "medium");
+  assert.ok(Object.hasOwn(NAV_SIZES, normalizeDisplay({ size: "large" }).size));
+  assert.equal(normalizeDisplay({ opacity: 5 }).opacity, 20);
+  assert.equal(normalizeDisplay({ opacity: 500 }).opacity, 100);
+  assert.equal(normalizeDisplay({ brightness: "x" }).brightness, 100);
+  assert.equal(normalizeDisplay({ brightness: 10 }).brightness, 40);
+  assert.equal(normalizeDisplay("junk").size, "medium");
+});
+
+test("orientation follows the screen shape", () => {
+  assert.equal(orientationOf(1024, 768), "landscape");
+  assert.equal(orientationOf(768, 1024), "portrait");
+  assert.equal(orientationOf(800, 800), "landscape");
 });
