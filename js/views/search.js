@@ -23,7 +23,8 @@ import {
 import { roleLabel } from "./layouts.js";
 import { keyLabel, openScoreHistory, periodName } from "./library.js";
 import { massTitle } from "./mass.js";
-import { openViewer, renderThumbnail } from "./viewer.js";
+import { openViewer, thumbnailImage } from "./viewer.js";
+import { pdfFirstPageCanvas, thumbnailFromCanvas } from "../score-prepare.js";
 
 const SHEET_QUERY = "(max-width: 767px)";
 const MAX_OBSERVANCES_SHOWN = 60;
@@ -1001,11 +1002,53 @@ export async function renderSearch(container, ctx, { query = "" } = {}) {
     }
   }
 
+  // Thumbnails that are on screen together share one signed-URL request.
+  let urlQueue = [];
+  let urlTimer = null;
+  function signedThumbUrl(path) {
+    return new Promise((resolve, reject) => {
+      urlQueue.push({ path, resolve, reject });
+      urlTimer ??= setTimeout(async () => {
+        const batch = urlQueue;
+        urlQueue = [];
+        urlTimer = null;
+        try {
+          const urls = await ctx.db.thumbnailUrls(batch.map((item) => item.path));
+          for (const item of batch) urls.has(item.path) ? item.resolve(urls.get(item.path)) : item.reject(new Error("no_thumbnail"));
+        } catch (error) {
+          for (const item of batch) item.reject(error);
+        }
+      }, 30);
+    });
+  }
+
+  // A Score saved before thumbnails existed: make its small thumbnail once from its first page,
+  // keep only that image, and use the stored one from then on. Nothing already saved is changed.
+  async function makeMissingThumbnail(row) {
+    const blob = await ctx.db.download(row.first_file_path);
+    let canvas;
+    if (row.first_file_mime === "application/pdf") {
+      canvas = await pdfFirstPageCanvas(blob);
+    } else {
+      const bitmap = await createImageBitmap(blob);
+      canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      canvas.getContext("2d").drawImage(bitmap, 0, 0);
+      bitmap.close?.();
+    }
+    const made = await thumbnailFromCanvas(canvas);
+    if (!made) throw new Error("no_thumbnail");
+    row.thumbnail_path = await ctx.db.addThumbnail({ id: row.score_id }, made, ctx.user.id);
+    return URL.createObjectURL(made.blob);
+  }
+
   async function loadThumb(thumb) {
     const row = thumbRows.get(thumb);
     if (!row) return;
     try {
-      const element = await renderThumbnail(ctx, { storage_path: row.first_file_path, mime_type: row.first_file_mime }, 200);
+      const url = row.thumbnail_path ? await signedThumbUrl(row.thumbnail_path) : await makeMissingThumbnail(row);
+      const element = await thumbnailImage(url);
       element.classList.add("preview-image");
       thumb.replaceChildren(element);
     } catch {

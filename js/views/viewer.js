@@ -15,7 +15,7 @@ const PREV_KEYS = new Set(["ArrowLeft", "ArrowUp", "PageUp"]);
 
 let pdfjsPromise = null;
 
-function loadPdfJs() {
+export function loadPdfJs() {
   pdfjsPromise ??= import(`${PDFJS_BASE}pdf.min.mjs`)
     .then((lib) => {
       lib.GlobalWorkerOptions.workerSrc = `${PDFJS_BASE}pdf.worker.min.mjs`;
@@ -28,7 +28,15 @@ function loadPdfJs() {
   return pdfjsPromise;
 }
 
-// First page only, drawn on demand for search previews. No thumbnail file is stored.
+// The stored small thumbnail (a signed URL from db.thumbnailUrls). Never downloads the PDF.
+export async function thumbnailImage(url) {
+  const img = h("img", { alt: "", draggable: "false", decoding: "async" });
+  img.src = url;
+  await img.decode();
+  return img;
+}
+
+// First page only, drawn from the PDF itself. Used to make a thumbnail for Scores that don't have one yet.
 export async function renderThumbnail(ctx, file, width = 160) {
   if (file.mime_type !== "application/pdf") {
     const img = h("img", { alt: "", draggable: "false" });

@@ -1121,6 +1121,7 @@ User UI prefs: saved_views | sort_preferences | format_preferences | page_turn_s
 - **본인 행만:** 개인 표 8개 모두 RLS `user_id = (select auth.uid())`. 기준 표는 로그인 회원 읽기 전용. 익명(anon) 권한은 모두 회수.
 - **비파괴:** 연결된 악보 삭제 거부(`23503`), 연주 확인이 있는 연결 삭제 거부, 연결 해제는 연결 행만 삭제. 미사를 지우면 그 미사의 항목·연결만 지워지고 악보는 남는다.
 - **Storage:** 비공개 버킷 `scores`(20MB, PDF·JPG·PNG). 정책 3개 — 본인 폴더 읽기, 본인 폴더 올리기, 본인 폴더 중 **어떤 `score_files` 행도 가리키지 않는 파일만** 삭제. UPDATE 정책이 없어 덮어쓰기 불가.
+- **최종 PDF + 썸네일 저장 (마이그레이션 `20261023020000_score_pdf_thumbnail`):** 새 악보는 기기에서 만든 **최종 PDF 1개**(`score_files` 1행, `role='page'`)와 **WebP 썸네일 1개**(`owned_scores.thumbnail_path`, 경로 `{user_id}/{score_id}/thumb-{uuid}.webp|jpg`를 CHECK로 강제)만 저장한다. 촬영·선택한 **원본 사진은 서버에 보관하지 않는다**(`score_files.role='original'`은 예약값이며 현재 사용하지 않음). 기존 PDF 업로드는 원본 그대로 저장하고 썸네일만 추가한다. 버킷은 `image/webp`도 허용한다. `search_scores` RPC는 `thumbnail_path`를 반환하며 `role='page'` 파일만 센다. 업로드 실패 시 복구용 임시본은 서버가 아니라 **기기의 IndexedDB**(`yearscore-uploads`)에만 둔다.
 
 ### 31.3 이 설계서(§5~§9, §18~§21)와 다른 점
 

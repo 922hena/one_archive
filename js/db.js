@@ -12,7 +12,7 @@ export const SEARCH_PAGE_SIZE = 50;
 
 const SCORE_FIELDS =
   "id,title,composer_name,provisional_title,status,created_at,last_edited_at," +
-  "composition_year,composition_year_approx,period_code,key_tonic,key_mode,key_text,note";
+  "composition_year,composition_year_approx,period_code,key_tonic,key_mode,key_text,note,thumbnail_path";
 const FILE_FIELDS = "id,storage_path,mime_type,byte_size,original_filename,page_no,created_at";
 const OBSERVANCE_FIELDS =
   "id,calendar_date,sort_order,name_ko,name_en,name_la,season_code,color_code,rank_code,source_url,verification_status";
@@ -457,6 +457,7 @@ export function createDb(supabase) {
 
   async function deleteScore(score) {
     const paths = (score.score_files ?? []).map((file) => file.storage_path);
+    if (score.thumbnail_path) paths.push(score.thumbnail_path);
     await run(supabase.from("owned_scores").delete().eq("id", score.id));
     if (paths.length) {
       // A failure here leaves an unreferenced file; cleanupOrphans() retries later.
@@ -487,6 +488,28 @@ export function createDb(supabase) {
     const { data, error } = await supabase.storage.from(SCORE_BUCKET).createSignedUrl(path, SIGNED_URL_SECONDS);
     if (error) throw error;
     return data.signedUrl;
+  }
+
+  // Signed URLs for many thumbnails in one request: Map(path -> url). Missing ones are left out.
+  async function thumbnailUrls(paths) {
+    const unique = [...new Set(paths.filter(Boolean))];
+    if (!unique.length) return new Map();
+    const { data, error } = await supabase.storage.from(SCORE_BUCKET).createSignedUrls(unique, SIGNED_URL_SECONDS);
+    if (error) throw error;
+    return new Map((data ?? []).filter((item) => item.signedUrl && !item.error).map((item) => [item.path, item.signedUrl]));
+  }
+
+  // One-time backfill for a Score saved before thumbnails existed: stores a small image and its path only.
+  async function addThumbnail(score, thumb, ownerId) {
+    const path = `${ownerId}/${score.id}/thumb-${crypto.randomUUID()}.${thumb.ext}`;
+    const { error } = await supabase.storage.from(SCORE_BUCKET).upload(path, thumb.blob, { contentType: thumb.mime, upsert: false });
+    if (error) throw error;
+    const { error: updateError } = await supabase.from("owned_scores").update({ thumbnail_path: path }).eq("id", score.id);
+    if (updateError) {
+      await supabase.storage.from(SCORE_BUCKET).remove([path]);
+      throw updateError;
+    }
+    return path;
   }
 
   async function download(path) {
@@ -703,6 +726,8 @@ export function createDb(supabase) {
     linkScore,
     unlink,
     signedUrl,
+    thumbnailUrls,
+    addThumbnail,
     download,
     scoreFiles,
     setPageNumbers,

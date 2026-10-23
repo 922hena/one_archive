@@ -1,6 +1,9 @@
 import { t } from "../i18n.js";
 import { formatBytes, formatDateTime, formatLongDate, formatShortDate, formatTime } from "../format.js";
-import { uploadScore, validateFile, detectMime, cleanupStaleUploads, MAX_FILE_BYTES } from "../upload.js";
+import { validateFile, detectMime, cleanupStaleUploads, MAX_FILE_BYTES } from "../upload.js";
+import { uploadPreparedScore, RETRY_DELAYS_MS } from "../upload-prepared.js";
+import { prepareScore } from "../score-prepare.js";
+import { tryDeleteDraft, tryListDrafts, trySaveDraft } from "../upload-drafts.js";
 import { h, createDialog, confirmDialog, errorMessage, notify, setBusy, displayScoreTitle } from "../ui.js";
 import { isImageScore, moveItem } from "../pages.js";
 import { openViewer } from "./viewer.js";
@@ -79,11 +82,14 @@ function fileSummary(files = []) {
 }
 
 // options.onSaved(scoreId) runs after a successful upload (e.g. link to a music item).
-export function openUploadDialog(ctx, { title = t("upload.title"), saveLabel = t("common.save"), onSaved } = {}) {
-  const { dialog, body, footer, close, setStatus } = createDialog(title, { wide: true });
+// options.draft: a finished-but-not-uploaded Score kept on this device (Resume).
+export function openUploadDialog(ctx, { title = t("upload.title"), saveLabel = t("common.save"), onSaved, draft = null } = {}) {
+  const { dialog, body, footer, close, setStatus } = createDialog(draft ? t("upload.resumeTitle") : title, { wide: true });
   let pending = [];
-  const titleInput = h("input", { type: "text", maxlength: 200, placeholder: t("upload.titlePlaceholder") });
-  const composerInput = h("input", { type: "text", maxlength: 200, placeholder: t("upload.composerPlaceholder") });
+  // The finished PDF + thumbnail. Once it exists, Retry re-sends it without redoing the pages.
+  let prepared = draft;
+  const titleInput = h("input", { type: "text", maxlength: 200, placeholder: t("upload.titlePlaceholder"), value: draft?.title ?? "" });
+  const composerInput = h("input", { type: "text", maxlength: 200, placeholder: t("upload.composerPlaceholder"), value: draft?.composerName ?? "" });
   const pendingList = h("ol", { class: "page-list" });
   const progress = h("p", { class: "hint", role: "status" });
 
@@ -143,52 +149,122 @@ export function openUploadDialog(ctx, { title = t("upload.title"), saveLabel = t
     for (const item of pending) if (item.url) URL.revokeObjectURL(item.url);
   });
 
+  const sourceArea = h("div", {}, photoSourceButtons({ accept: FILE_ACCEPT, onFiles: addFiles, setStatus }));
+  const preparedNote = h("p", { class: "hint", hidden: true });
+  // Once the final PDF exists the pages are fixed; only the title and composer can still change.
+  function showPrepared() {
+    sourceArea.hidden = Boolean(prepared);
+    pendingList.hidden = Boolean(prepared);
+    preparedNote.hidden = !prepared;
+    if (prepared) {
+      preparedNote.textContent = t("upload.preparedNote", { name: prepared.pdfName, size: formatBytes(prepared.pdf.size) });
+    }
+  }
+
   body.append(
     h("div", { class: "field-row" },
       h("label", { class: "field" }, h("span", { text: t("upload.scoreTitle") }), titleInput),
       h("label", { class: "field" }, h("span", { text: t("upload.composer") }), composerInput)
     ),
     h("p", { class: "hint", text: t("upload.optionalHint") }),
-    photoSourceButtons({ accept: FILE_ACCEPT, onFiles: addFiles, setStatus }),
+    sourceArea,
     h("p", { class: "hint", text: t("upload.rules", { limit: formatBytes(MAX_FILE_BYTES) }) }),
     pendingList,
+    preparedNote,
     progress
   );
   renderPending();
+  showPrepared();
 
-  const saveButton = h("button", { type: "button", class: "solid-button" }, saveLabel);
+  const saveButton = h("button", { type: "button", class: "solid-button" }, draft ? t("upload.retry") : saveLabel);
   const cancelButton = h("button", { type: "button", class: "ghost-button", onclick: close }, t("common.cancel"));
-  footer.append(cancelButton, saveButton);
+  const discardButton = h("button", { type: "button", class: "ghost-button is-danger", hidden: !draft }, t("upload.discard"));
+  footer.append(discardButton, cancelButton, saveButton);
+  const allButtons = [saveButton, cancelButton, discardButton];
+
+  // The finished Score stays on this device until it is stored or discarded.
+  discardButton.addEventListener("click", async () => {
+    const ok = await confirmDialog(t("upload.discardConfirm"), { confirmLabel: t("upload.discard"), danger: true });
+    if (!ok) return;
+    await tryDeleteDraft(prepared.scoreId);
+    if (draft) {
+      close();
+      ctx.refresh();
+      return;
+    }
+    prepared = null;
+    showPrepared();
+    progress.textContent = "";
+    setStatus("");
+    saveButton.textContent = saveLabel;
+  });
+
+  function onUploadStage(stage, attempt) {
+    if (stage === "retry") progress.textContent = t("upload.retrying", { attempt, total: RETRY_DELAYS_MS.length });
+    else progress.textContent = t("upload.uploading");
+  }
+
+  async function prepare() {
+    const files = pending.map((item) => item.file);
+    const pdfFile = files.find(isPdf) ?? null;
+    progress.textContent = t("upload.preparing");
+    const made = await prepareScore({ pdfFile, photoFiles: pdfFile ? [] : files }, (current, total) => {
+      progress.textContent = t("upload.preparingPages", { current, total });
+    });
+    prepared = {
+      scoreId: crypto.randomUUID(),
+      fileId: crypto.randomUUID(),
+      thumbId: crypto.randomUUID(),
+      userId: ctx.user.id,
+      pdf: made.pdf,
+      pdfName: made.pdfName,
+      thumb: made.thumb,
+      title: "",
+      composerName: "",
+      createdAt: Date.now()
+    };
+  }
 
   saveButton.addEventListener("click", async () => {
-    if (!pending.length) {
-      setStatus(t("upload.noneSelected"));
-      return;
+    if (!prepared) {
+      if (!pending.length) {
+        setStatus(t("upload.noneSelected"));
+        return;
+      }
+      const files = pending.map((item) => item.file);
+      if (files.some(isPdf) && files.length > 1) {
+        setStatus(t("upload.pdfAlone"));
+        return;
+      }
     }
-    const files = pending.map((item) => item.file);
-    if (files.some(isPdf) && files.length > 1) {
-      setStatus(t("upload.pdfAlone"));
-      return;
-    }
-    setBusy([saveButton, cancelButton], true);
+    setBusy(allButtons, true);
     setStatus("");
-    let scoreId = null;
     try {
-      scoreId = await uploadScore(
-        ctx.supabase,
-        ctx.user.id,
-        files,
-        { title: titleInput.value, composerName: composerInput.value },
-        (current, total) => {
-          progress.textContent = t("upload.progress", { current, total });
-        }
-      );
+      if (!prepared) await prepare();
     } catch (error) {
       progress.textContent = "";
-      setStatus(errorMessage(error, "upload.failed"));
-      setBusy([saveButton, cancelButton], false);
+      setStatus(error?.code === "pdf_too_large" ? t("upload.pdfTooLarge", { limit: formatBytes(MAX_FILE_BYTES) }) : t("upload.prepareFailed"));
+      setBusy(allButtons, false);
+      discardButton.hidden = !draft;
       return;
     }
+    prepared.title = titleInput.value;
+    prepared.composerName = composerInput.value;
+    // Save the finished Score on this device first so a failure or closed tab can continue later.
+    await trySaveDraft(prepared);
+    showPrepared();
+    let scoreId = null;
+    try {
+      scoreId = await uploadPreparedScore(ctx.supabase, ctx.user.id, prepared, onUploadStage);
+    } catch (error) {
+      progress.textContent = "";
+      setStatus(errorMessage(error, "upload.failedKept"));
+      saveButton.textContent = t("upload.retry");
+      discardButton.hidden = false;
+      setBusy(allButtons, false);
+      return;
+    }
+    await tryDeleteDraft(prepared.scoreId);
     try {
       if (onSaved) await onSaved(scoreId);
       close();
@@ -425,6 +501,18 @@ async function deleteScore(ctx, score) {
 export async function renderLibrary(container, ctx) {
   await cleanupStaleUploads(ctx.supabase, ctx.user.id).catch(() => {});
   const scores = await ctx.db.readyScores();
+  const readyIds = new Set(scores.map((score) => score.id));
+  // Finished Scores that never got uploaded. One quiet line each, only here (not on Home).
+  const allDrafts = await tryListDrafts(ctx.user.id);
+  for (const draft of allDrafts) if (readyIds.has(draft.scoreId)) tryDeleteDraft(draft.scoreId); // already stored
+  const drafts = allDrafts.filter((draft) => !readyIds.has(draft.scoreId));
+  const draftNotices = drafts.map((draft) =>
+    h("p", { class: "hint draft-notice", role: "status" },
+      h("span", { translate: "no", text: t("upload.unfinished", { name: draft.title?.trim() || draft.pdfName }) }),
+      " ",
+      h("button", { type: "button", class: "link-button", onclick: () => openUploadDialog(ctx, { draft }) }, t("upload.resume"))
+    )
+  );
 
   const table = scores.length
     ? h(
@@ -482,6 +570,7 @@ export async function renderLibrary(container, ctx) {
         h("button", { type: "button", class: "solid-button", onclick: () => openUploadDialog(ctx) }, t("library.upload"))
       )
     ),
+    ...draftNotices,
     table
   );
 }
