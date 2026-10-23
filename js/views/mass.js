@@ -28,7 +28,18 @@ import {
 } from "../recurrence.js";
 import { isMissingRelation } from "../db.js";
 import { openUploadDialog } from "./library.js";
-import { openViewer } from "./viewer.js";
+import { openPerformance, openViewer } from "./viewer.js";
+import { setlistFromMass } from "../performance.js";
+
+// Opens every linked score of a Missa, in Music order. Opening is not a performance record (decision D1).
+export function openMassPerformance(ctx, mass, roles) {
+  const songs = setlistFromMass(mass, roles);
+  if (!songs.length) {
+    notify(t("perform.noScores"), "error");
+    return;
+  }
+  openPerformance(ctx, { title: massTitle(mass), songs });
+}
 
 const COLORS = ["green", "white", "violet", "red", "rose"];
 const STATUSES = ["planned", "completed", "cancelled"];
@@ -804,7 +815,7 @@ export async function renderMass(container, ctx, { id }) {
     h("dl", { class: "mass-facts" }, facts.flatMap(([name, value]) => [h("dt", { text: name }), h("dd", {}, value)])),
     mass.notes ? h("p", { class: "notes", translate: "no", text: mass.notes }) : null,
     h("div", { class: "mass-actions" },
-      h("button", { type: "button", class: "solid-button", onclick: () => notify(t("mass.performSoon")) }, t("mass.performMode")),
+      h("button", { type: "button", class: "solid-button", onclick: () => openMassPerformance(ctx, mass, roles) }, t("mass.performMode")),
       h("button", { type: "button", class: "ghost-button", onclick: () => openUploadDialog(ctx) }, t("mass.addScore"))
     )
   );

@@ -12,8 +12,53 @@ import {
   todayIso,
   weekdayShort
 } from "../format.js";
-import { h, colorDot, notify } from "../ui.js";
-import { openMassForm, massTitle, liturgyLine, liturgyText } from "./mass.js";
+import { h, colorDot, notify, createDialog, errorMessage } from "../ui.js";
+import { openMassForm, massTitle, liturgyLine, liturgyText, openMassPerformance } from "./mass.js";
+import { linkedCount } from "../performance.js";
+
+// Performance Mode for a date: only Missae with linked scores qualify. One opens at once, several are listed.
+async function performDate(ctx, masses, roles) {
+  const ready = masses.filter((mass) => linkedCount(mass) > 0);
+  if (!ready.length) {
+    notify(t("perform.noScoresOnDate"), "error");
+    return;
+  }
+  const open = async (mass) => {
+    try {
+      openMassPerformance(ctx, await ctx.db.mass(mass.id), roles);
+    } catch (error) {
+      notify(errorMessage(error, "library.openFailed"), "error");
+    }
+  };
+  if (ready.length === 1) {
+    await open(ready[0]);
+    return;
+  }
+  const { body, footer, close } = createDialog(t("perform.chooseMass"));
+  body.append(
+    h("ul", { class: "plain-list" },
+      ready.map((mass) =>
+        h("li", {},
+          h("button", {
+            type: "button",
+            class: "list-row is-link choose-row",
+            onclick: async () => {
+              close();
+              await open(mass);
+            }
+          },
+            h("span", { class: "time num", text: formatTime(mass.start_time) || t("calendar.noTime") }),
+            h("div", { class: "list-main" },
+              h("strong", { translate: "no", text: massTitle(mass) }),
+              h("span", { class: "meta", text: t("perform.linkedScores", { count: linkedCount(mass) }) })
+            )
+          )
+        )
+      )
+    )
+  );
+  footer.append(h("button", { type: "button", class: "ghost-button", onclick: close }, t("common.cancel")));
+}
 
 function groupBy(rows, key) {
   const map = new Map();
@@ -133,6 +178,8 @@ function dayPanel(ctx, { selected, observances, masses, roles, layouts, venues }
       : null,
     h("div", { class: "section-bar" },
       h("h2", { text: t("calendar.massesHead") }),
+      h("div", { class: "section-actions" },
+      h("button", { type: "button", class: "ghost-button", onclick: () => performDate(ctx, masses, roles) }, t("perform.dateButton")),
       h("button", {
         type: "button",
         class: "solid-button",
@@ -145,6 +192,7 @@ function dayPanel(ctx, { selected, observances, masses, roles, layouts, venues }
           }
         }
       }, t("calendar.newMass"))
+      )
     ),
     list
   );

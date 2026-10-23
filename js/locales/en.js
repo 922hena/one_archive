@@ -591,6 +591,21 @@ export default {
     loadFailed: "Couldn't load this page.",
     pdfFailed: "Couldn't display the PDF. Try ‘Original file’."
   },
+  perform: {
+    lineup: "Lineup",
+    prevSong: "Previous Score",
+    nextSong: "Next Score",
+    firstSong: "This is the first Score.",
+    lastSong: "This is the last Score.",
+    count: "Score {song}/{songs} · {page}/{pages} · {current}/{total}",
+    goToPage: "Go to page {page}",
+    noWakeLock: "This device may turn the screen off. Change the auto-lock setting before you start.",
+    noScores: "No Scores are linked yet. Use ‘Add Score’ or ‘Link from Score Library’ first.",
+    noScoresOnDate: "No Missa on this date has a linked Score yet. Add a Score first.",
+    dateButton: "Performance Mode",
+    chooseMass: "Choose a Missa",
+    linkedScores: "{count} linked"
+  },
   camera: {
     title: "Capture pages",
     open: "Capture pages",

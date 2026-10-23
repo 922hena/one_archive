@@ -1,6 +1,7 @@
 import { t } from "../i18n.js";
 import { h, notify, errorMessage, displayScoreTitle } from "../ui.js";
 import { comparePages } from "../pages.js";
+import { locatePage, songStarts } from "../performance.js";
 
 // Legacy build: also runs on older iPad Safari.
 const PDFJS_BASE = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/";
@@ -58,12 +59,37 @@ export async function openOriginal(ctx, file, localUrl = null) {
   }
 }
 
+// One score, opened in the same screen Performance Mode uses.
 export function openViewer(ctx, score) {
-  const files = [...(score?.score_files ?? [])].sort(comparePages);
+  const files = score?.score_files ?? [];
   if (!files.length) {
     notify(t("library.noFiles"), "error");
     return;
   }
+  openPerformance(ctx, { title: displayScoreTitle(score), songs: [{ key: score.id, number: null, label: "", score, files }] });
+}
+
+// songs: [{ key, number, label, score, files }] shown one after another (see performance.js).
+// The first song appears as soon as it is ready; the others load in the background, in order.
+export function openPerformance(ctx, { title, songs }) {
+  if (!songs?.length) {
+    notify(t("library.noFiles"), "error");
+    return;
+  }
+  const multi = songs.length > 1;
+  const songFiles = songs.map((song) => [...song.files].sort(comparePages));
+  const counts = [];
+  const ready = songs.map(() => {
+    let resolve;
+    const promise = new Promise((done) => {
+      resolve = done;
+    });
+    return { promise, resolve };
+  });
+  let loadedSongs = 0;
+  let lineupOpen = false;
+  let wakeLock = null;
+  let wakeWarned = false;
 
   const pages = [];
   const fileBlobs = new Map();
@@ -83,17 +109,38 @@ export function openViewer(ctx, score) {
   const notice = h("p", { class: "viewer-notice", role: "status", hidden: true });
   const prevButton = h("button", { type: "button", class: "viewer-nav is-prev", "aria-label": t("viewer.previous"), onclick: () => turn(-1) }, "‹");
   const nextButton = h("button", { type: "button", class: "viewer-nav is-next", "aria-label": t("viewer.next"), onclick: () => turn(1) }, "›");
-  const stage = h("div", { class: "viewer-stage" }, holder, prevButton, nextButton, notice);
+  const lineupList = h("ol", { class: "lineup-list" });
+  const lineupPanel = h("section", { class: "viewer-lineup", "aria-label": t("perform.lineup"), hidden: true },
+    h("div", { class: "lineup-head" },
+      h("strong", { translate: "no", text: title }),
+      h("button", { type: "button", class: "viewer-tool", onclick: () => toggleLineup(false) }, t("common.close"))
+    ),
+    lineupList
+  );
+  const stage = h("div", { class: "viewer-stage" }, holder, prevButton, nextButton, notice, lineupPanel);
   const fullscreenButton = document.fullscreenEnabled
     ? h("button", { type: "button", class: "viewer-tool", onclick: toggleFullscreen }, t("viewer.fullscreen"))
     : null;
+  const titleLabel = h("strong", { class: "viewer-title", translate: "no" });
+  const prevSongButton = multi
+    ? h("button", { type: "button", class: "viewer-tool", "aria-label": t("perform.prevSong"), onclick: () => turnSong(-1) }, "«")
+    : null;
+  const nextSongButton = multi
+    ? h("button", { type: "button", class: "viewer-tool", "aria-label": t("perform.nextSong"), onclick: () => turnSong(1) }, "»")
+    : null;
+  const lineupButton = multi
+    ? h("button", { type: "button", class: "viewer-tool", "aria-expanded": "false", onclick: () => toggleLineup() }, t("perform.lineup"))
+    : null;
   const dialog = h(
     "dialog",
-    { class: "viewer", "aria-label": displayScoreTitle(score) },
+    { class: "viewer", "aria-label": title },
     h("div", { class: "viewer-bar" },
-      h("strong", { class: "viewer-title", translate: "no", text: displayScoreTitle(score) }),
+      prevSongButton,
+      nextSongButton,
+      titleLabel,
       counter,
-      h("button", { type: "button", class: "viewer-tool", onclick: () => openFile(pages[index]?.file ?? files[0]) }, t("viewer.original")),
+      lineupButton,
+      h("button", { type: "button", class: "viewer-tool", onclick: () => openFile(pages[index]?.file ?? songFiles[currentSong()][0]) }, t("viewer.original")),
       fullscreenButton,
       h("button", { type: "button", class: "viewer-tool is-close", "aria-label": t("common.close"), onclick: () => dialog.close() }, "×")
     ),
@@ -142,15 +189,139 @@ export function openViewer(ctx, score) {
     return pdfDocs.get(file.id);
   }
 
-  async function buildPages() {
-    for (const file of files) {
-      if (file.mime_type === "application/pdf") {
-        const doc = await pdfDoc(file);
-        for (let number = 1; number <= doc.numPages; number += 1) pages.push({ file, pdfPage: number });
-      } else {
-        pages.push({ file });
+  // Songs are added to `pages` whole and in order, so global page numbers never shift once shown.
+  async function loadSong(at) {
+    const list = [];
+    try {
+      for (const file of songFiles[at]) {
+        if (file.mime_type === "application/pdf") {
+          const doc = await pdfDoc(file);
+          for (let number = 1; number <= doc.numPages; number += 1) list.push({ song: at, file, pdfPage: number });
+        } else {
+          list.push({ song: at, file });
+        }
       }
+    } catch (error) {
+      // One song that can't be read doesn't stop the others: it shows as a single error page.
+      list.length = 0;
+      list.push({ song: at, file: songFiles[at][0], failed: error });
     }
+    pages.push(...list);
+    counts[at] = list.length;
+    loadedSongs += 1;
+    ready[at].resolve();
+    if (!closed && pages.length) updateBar();
+    if (lineupOpen) renderLineup();
+  }
+
+  async function loadAllSongs() {
+    for (let at = 0; at < songs.length; at += 1) {
+      if (closed) return;
+      await loadSong(at);
+    }
+  }
+
+  function currentSong() {
+    return locatePage(counts, index).song;
+  }
+
+  function songStart(at) {
+    return songStarts(counts)[at];
+  }
+
+  function updateBar() {
+    const { song, page } = locatePage(counts, index);
+    const done = loadedSongs === songs.length;
+    const total = done ? String(pages.length) : `${pages.length}+`;
+    titleLabel.textContent = (multi && songs[song].label ? `${songs[song].number} ${songs[song].label} · ` : "") + displayScoreTitle(songs[song].score);
+    counter.textContent = multi
+      ? t("perform.count", { song: song + 1, songs: songs.length, page: page + 1, pages: counts[song], total, current: index + 1 })
+      : t("viewer.count", { page: index + 1, total });
+    prevButton.disabled = index === 0;
+    nextButton.disabled = done && index >= pages.length - 1;
+    if (multi) {
+      prevSongButton.disabled = song === 0;
+      nextSongButton.disabled = song >= songs.length - 1;
+    }
+  }
+
+  // Music Part shortcuts and page numbers. Loaded songs only; the rest say they are still loading.
+  function renderLineup() {
+    const starts = songStarts(counts);
+    const active = currentSong();
+    lineupList.replaceChildren(
+      ...songs.map((song, at) => {
+        const open = starts[at] !== undefined;
+        const chips = open
+          ? Array.from({ length: counts[at] }, (_, n) =>
+              h("button", {
+                type: "button",
+                class: starts[at] + n === index ? "lineup-page is-current" : "lineup-page",
+                "aria-label": t("perform.goToPage", { page: starts[at] + n + 1 }),
+                "aria-current": starts[at] + n === index ? "true" : null,
+                onclick: () => goTo(starts[at] + n)
+              }, String(starts[at] + n + 1))
+            )
+          : [h("span", { class: "meta", text: t("common.loading") })];
+        return h("li", { class: at === active ? "lineup-item is-active" : "lineup-item" },
+          h("button", { type: "button", class: "lineup-song", disabled: !open, onclick: () => goTo(starts[at]) },
+            h("span", { class: "lineup-no num", text: song.number ?? String(at + 1).padStart(2, "0") }),
+            h("span", { class: "lineup-role", translate: "no", text: song.label }),
+            h("span", { class: "lineup-title", translate: "no", text: displayScoreTitle(song.score) })
+          ),
+          h("div", { class: "lineup-pages" }, chips)
+        );
+      })
+    );
+  }
+
+  function toggleLineup(force) {
+    if (!multi) return;
+    lineupOpen = force ?? !lineupOpen;
+    lineupPanel.hidden = !lineupOpen;
+    lineupButton.setAttribute("aria-expanded", String(lineupOpen));
+    if (lineupOpen) {
+      renderLineup();
+      lineupPanel.querySelector(".lineup-item.is-active .lineup-song")?.focus();
+    } else {
+      lineupButton.focus();
+    }
+  }
+
+  function goTo(at) {
+    toggleLineup(false);
+    show(at);
+  }
+
+  // Wake Lock keeps the screen on while performing. It is released by the browser when the tab
+  // is hidden, so it is asked for again when the viewer comes back.
+  async function keepAwake() {
+    if (closed || wakeLock) return;
+    if (!("wakeLock" in navigator)) {
+      if (!wakeWarned) {
+        wakeWarned = true;
+        setTimeout(() => !closed && flash(t("perform.noWakeLock"), 4000), 3400);
+      }
+      return;
+    }
+    try {
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", () => {
+        wakeLock = null;
+      });
+      if (closed) releaseWake();
+    } catch {
+      wakeLock = null; // e.g. low battery: the screen may sleep, nothing else breaks
+    }
+  }
+
+  function releaseWake() {
+    wakeLock?.release().catch(() => {});
+    wakeLock = null;
+  }
+
+  function onVisibility() {
+    if (document.visibilityState === "visible") keepAwake();
   }
 
   async function renderImage(page) {
@@ -179,10 +350,19 @@ export function openViewer(ctx, score) {
     return canvas;
   }
 
+  function failedPage(page) {
+    return h("div", { class: "viewer-message" },
+      h("p", { text: errorMessage(page.failed, page.file.mime_type === "application/pdf" ? "viewer.pdfFailed" : "viewer.loadFailed") }),
+      h("button", { type: "button", class: "viewer-tool", onclick: () => openFile(page.file) }, t("viewer.original"))
+    );
+  }
+
   function renderPage(at) {
     if (!rendered.has(at)) {
       const page = pages[at];
-      const promise = page.pdfPage ? renderPdf(page) : renderImage(page);
+      const promise = page.failed
+        ? Promise.resolve(failedPage(page))
+        : page.pdfPage ? renderPdf(page) : renderImage(page);
       promise.catch(() => rendered.delete(at));
       rendered.set(at, promise);
     }
@@ -202,9 +382,8 @@ export function openViewer(ctx, score) {
   async function show(at) {
     index = at;
     const token = ++showToken;
-    counter.textContent = t("viewer.count", { page: index + 1, total: pages.length });
-    prevButton.disabled = index === 0;
-    nextButton.disabled = index === pages.length - 1;
+    updateBar();
+    if (lineupOpen) renderLineup();
     const slow = setTimeout(() => {
       if (token === showToken) holder.replaceChildren(h("p", { class: "viewer-message", text: t("common.loading") }));
     }, 150);
@@ -228,12 +407,18 @@ export function openViewer(ctx, score) {
     evict();
   }
 
-  function turn(step) {
+  async function turn(step) {
     if (!pages.length) return;
     const target = index + step;
     if (target < 0) {
       flash(t("viewer.first"));
       return;
+    }
+    // The next song may still be loading in the background: wait for it instead of stopping.
+    if (target >= pages.length && loadedSongs < songs.length) {
+      holder.replaceChildren(h("p", { class: "viewer-message", text: t("common.loading") }));
+      await ready[loadedSongs].promise;
+      if (closed) return;
     }
     if (target >= pages.length) {
       flash(t("viewer.last"));
@@ -242,8 +427,24 @@ export function openViewer(ctx, score) {
     show(target);
   }
 
+  // Previous / next song: jumps to the first page of it.
+  async function turnSong(step) {
+    if (!pages.length) return;
+    const target = currentSong() + step;
+    if (target < 0 || target >= songs.length) {
+      flash(t(target < 0 ? "perform.firstSong" : "perform.lastSong"));
+      return;
+    }
+    if (songStart(target) === undefined) {
+      holder.replaceChildren(h("p", { class: "viewer-message", text: t("common.loading") }));
+      await ready[target].promise;
+      if (closed) return;
+    }
+    show(songStart(target));
+  }
+
   function onKeyDown(event) {
-    if (event.altKey || event.ctrlKey || event.metaKey || event.defaultPrevented) return;
+    if (event.altKey || event.ctrlKey || event.metaKey || event.defaultPrevented || lineupOpen) return;
     const onButton = event.target instanceof HTMLButtonElement;
     let step = 0;
     if (NEXT_KEYS.has(event.key)) step = 1;
@@ -262,7 +463,7 @@ export function openViewer(ctx, score) {
   }
 
   function onPointerDown(event) {
-    if (event.target.closest("button")) return;
+    if (event.target.closest("button, .viewer-lineup")) return;
     pointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
   }
 
@@ -317,10 +518,19 @@ export function openViewer(ctx, score) {
   });
   window.addEventListener("resize", onResize);
   document.addEventListener("fullscreenchange", onFullscreenChange);
+  document.addEventListener("visibilitychange", onVisibility);
+  // Esc closes the Lineup first; the viewer closes on the next Esc.
+  dialog.addEventListener("cancel", (event) => {
+    if (!lineupOpen) return;
+    event.preventDefault();
+    toggleLineup(false);
+  });
   dialog.addEventListener("close", () => {
     closed = true;
+    releaseWake();
     clearTimeout(noticeTimer);
     clearTimeout(resizeTimer);
+    document.removeEventListener("visibilitychange", onVisibility);
     document.removeEventListener("keydown", onKeyDown);
     window.removeEventListener("resize", onResize);
     document.removeEventListener("fullscreenchange", onFullscreenChange);
@@ -335,19 +545,11 @@ export function openViewer(ctx, score) {
   document.body.append(dialog);
   dialog.showModal();
 
-  buildPages()
-    .then(() => {
-      if (closed) return;
-      show(0);
-      flash(window.matchMedia("(pointer: coarse)").matches ? t("viewer.touchHint") : t("viewer.keyHint"), 3200);
-    })
-    .catch((error) => {
-      if (closed) return;
-      holder.replaceChildren(
-        h("div", { class: "viewer-message" },
-          h("p", { text: errorMessage(error, files.some((file) => file.mime_type === "application/pdf") ? "viewer.pdfFailed" : "viewer.loadFailed") }),
-          h("button", { type: "button", class: "viewer-tool", onclick: () => openFile(files[0]) }, t("viewer.original"))
-        )
-      );
-    });
+  keepAwake();
+  loadAllSongs();
+  ready[0].promise.then(() => {
+    if (closed) return;
+    show(0);
+    flash(window.matchMedia("(pointer: coarse)").matches ? t("viewer.touchHint") : t("viewer.keyHint"), 3200);
+  });
 }

@@ -259,6 +259,30 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .viewer.is-immersive .viewer-bar, .viewer.is-immersive .viewer-nav { display: none; }
 @media (pointer: coarse) { .viewer-nav { display: none; } }
 
+/* Performance Mode: several Scores in one viewer */
+.viewer-bar { flex-wrap: wrap; }
+.viewer.is-immersive .viewer-lineup { display: none; }
+.viewer-lineup { position: absolute; top: 0; right: 0; bottom: 0; width: min(440px, 100%); display: flex; flex-direction: column; background: #111211; border-left: 1px solid rgba(255, 255, 255, 0.18); z-index: 3; }
+.viewer-lineup[hidden] { display: none; }
+.lineup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.18); }
+.lineup-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.95rem; }
+.lineup-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+.lineup-item { border-bottom: 1px solid rgba(255, 255, 255, 0.14); padding: 4px 0 8px; }
+.lineup-item.is-active { background: rgba(255, 255, 255, 0.07); }
+.lineup-song { display: grid; grid-template-columns: 28px 76px minmax(0, 1fr); gap: 8px; align-items: center; width: 100%; min-height: 48px; padding: 4px 12px; border: 0; background: none; color: #fff; text-align: left; font: inherit; font-size: 0.9rem; cursor: pointer; }
+.lineup-song:disabled { color: #8f938f; cursor: default; }
+.lineup-song:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+.lineup-no { color: #c9cbc8; font-size: 0.8rem; }
+.lineup-role { color: #c9cbc8; font-size: 0.8rem; overflow-wrap: anywhere; }
+.lineup-title { overflow-wrap: anywhere; }
+.lineup-pages { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 0 112px; }
+.lineup-page { min-width: 44px; min-height: 44px; border: 1px solid rgba(255, 255, 255, 0.28); border-radius: var(--radius); background: transparent; color: #fff; font: inherit; font-size: 0.86rem; font-variant-numeric: tabular-nums; cursor: pointer; }
+.lineup-page:hover { background: rgba(255, 255, 255, 0.12); }
+.lineup-page.is-current { background: #fff; color: #0B0B0D; border-color: #fff; }
+.viewer-lineup :focus-visible, .viewer-bar :focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.section-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.choose-row { width: 100%; min-height: 48px; border: 0; background: none; text-align: left; font: inherit; cursor: pointer; }
+
 /* burst camera */
 .camera { width: 100vw; height: 100vh; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: #000; color: #fff; overflow: hidden; }
 .camera[open] { display: flex; flex-direction: column; }
