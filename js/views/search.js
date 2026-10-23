@@ -28,6 +28,32 @@ import { pdfFirstPageCanvas, thumbnailFromCanvas } from "../score-prepare.js";
 
 const SHEET_QUERY = "(max-width: 767px)";
 const MAX_OBSERVANCES_SHOWN = 60;
+const THUMB_FAILED_KEY = "yearscore-thumb-failed";
+const THUMB_RETRY_MS = 24 * 60 * 60 * 1000;
+
+// Score id -> time a missing thumbnail couldn't be made or stored on this device.
+function failedThumbs() {
+  try {
+    return JSON.parse(localStorage.getItem(THUMB_FAILED_KEY)) ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function thumbRecentlyFailed(scoreId) {
+  const at = failedThumbs()[scoreId];
+  return Boolean(at) && Date.now() - at < THUMB_RETRY_MS;
+}
+
+function markThumbFailed(scoreId) {
+  const now = Date.now();
+  const kept = Object.fromEntries(Object.entries(failedThumbs()).filter(([, at]) => now - at < THUMB_RETRY_MS));
+  try {
+    localStorage.setItem(THUMB_FAILED_KEY, JSON.stringify({ ...kept, [scoreId]: now }));
+  } catch {
+    // without storage the next visit simply tries again
+  }
+}
 
 // Saved filter order, hidden filters, sort and view (saved_views, C6). Loaded once per signed-in member.
 const viewCache = { userId: null, config: null };
@@ -1002,44 +1028,41 @@ export async function renderSearch(container, ctx, { query = "" } = {}) {
     }
   }
 
-  // Thumbnails that are on screen together share one signed-URL request.
-  let urlQueue = [];
-  let urlTimer = null;
-  function signedThumbUrl(path) {
-    return new Promise((resolve, reject) => {
-      urlQueue.push({ path, resolve, reject });
-      urlTimer ??= setTimeout(async () => {
-        const batch = urlQueue;
-        urlQueue = [];
-        urlTimer = null;
-        try {
-          const urls = await ctx.db.thumbnailUrls(batch.map((item) => item.path));
-          for (const item of batch) urls.has(item.path) ? item.resolve(urls.get(item.path)) : item.reject(new Error("no_thumbnail"));
-        } catch (error) {
-          for (const item of batch) item.reject(error);
-        }
-      }, 30);
-    });
+  // Downloaded with the signed-in session (same address every time), so the browser cache
+  // serves repeat views instead of fetching the thumbnail again.
+  async function storedThumbUrl(path) {
+    return URL.createObjectURL(await ctx.db.download(path));
   }
 
   // A Score saved before thumbnails existed: make its small thumbnail once from its first page,
   // keep only that image, and use the stored one from then on. Nothing already saved is changed.
+  // After a failure the full first page is not downloaded again on this device for a day.
   async function makeMissingThumbnail(row) {
-    const blob = await ctx.db.download(row.first_file_path);
-    let canvas;
-    if (row.first_file_mime === "application/pdf") {
-      canvas = await pdfFirstPageCanvas(blob);
-    } else {
-      const bitmap = await createImageBitmap(blob);
-      canvas = document.createElement("canvas");
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      canvas.getContext("2d").drawImage(bitmap, 0, 0);
-      bitmap.close?.();
+    if (thumbRecentlyFailed(row.score_id)) return null;
+    let made;
+    try {
+      const blob = await ctx.db.download(row.first_file_path);
+      let canvas;
+      if (row.first_file_mime === "application/pdf") {
+        canvas = await pdfFirstPageCanvas(blob);
+      } else {
+        const bitmap = await createImageBitmap(blob);
+        canvas = document.createElement("canvas");
+        canvas.width = bitmap.width;
+        canvas.height = bitmap.height;
+        canvas.getContext("2d").drawImage(bitmap, 0, 0);
+        bitmap.close?.();
+      }
+      made = await thumbnailFromCanvas(canvas);
+    } catch (error) {
+      markThumbFailed(row.score_id);
+      throw error;
     }
-    const made = await thumbnailFromCanvas(canvas);
-    if (!made) throw new Error("no_thumbnail");
-    row.thumbnail_path = await ctx.db.addThumbnail({ id: row.score_id }, made, ctx.user.id);
+    try {
+      row.thumbnail_path = await ctx.db.addThumbnail({ id: row.score_id }, made, ctx.user.id);
+    } catch {
+      markThumbFailed(row.score_id); // shown this time from the copy made here, not stored
+    }
     return URL.createObjectURL(made.blob);
   }
 
@@ -1047,7 +1070,11 @@ export async function renderSearch(container, ctx, { query = "" } = {}) {
     const row = thumbRows.get(thumb);
     if (!row) return;
     try {
-      const url = row.thumbnail_path ? await signedThumbUrl(row.thumbnail_path) : await makeMissingThumbnail(row);
+      const url = row.thumbnail_path ? await storedThumbUrl(row.thumbnail_path) : await makeMissingThumbnail(row);
+      if (!url) {
+        thumb.replaceChildren(h("span", { class: "preview-empty", text: t("search.noPreview") }));
+        return;
+      }
       const element = await thumbnailImage(url);
       element.classList.add("preview-image");
       thumb.replaceChildren(element);

@@ -1,4 +1,5 @@
 import { SCORE_BUCKET } from "./supabase.js";
+import { CACHE_SECONDS } from "./upload-prepared.js";
 import { compareMasses, todayIso } from "./format.js";
 import { comparePages } from "./pages.js";
 import { liturgyFields, needsLiturgyRefresh, occurrenceDates, occurrenceWindow } from "./recurrence.js";
@@ -490,19 +491,12 @@ export function createDb(supabase) {
     return data.signedUrl;
   }
 
-  // Signed URLs for many thumbnails in one request: Map(path -> url). Missing ones are left out.
-  async function thumbnailUrls(paths) {
-    const unique = [...new Set(paths.filter(Boolean))];
-    if (!unique.length) return new Map();
-    const { data, error } = await supabase.storage.from(SCORE_BUCKET).createSignedUrls(unique, SIGNED_URL_SECONDS);
-    if (error) throw error;
-    return new Map((data ?? []).filter((item) => item.signedUrl && !item.error).map((item) => [item.path, item.signedUrl]));
-  }
-
   // One-time backfill for a Score saved before thumbnails existed: stores a small image and its path only.
   async function addThumbnail(score, thumb, ownerId) {
     const path = `${ownerId}/${score.id}/thumb-${crypto.randomUUID()}.${thumb.ext}`;
-    const { error } = await supabase.storage.from(SCORE_BUCKET).upload(path, thumb.blob, { contentType: thumb.mime, upsert: false });
+    const { error } = await supabase.storage
+      .from(SCORE_BUCKET)
+      .upload(path, thumb.blob, { contentType: thumb.mime, cacheControl: CACHE_SECONDS, upsert: false });
     if (error) throw error;
     const { error: updateError } = await supabase.from("owned_scores").update({ thumbnail_path: path }).eq("id", score.id);
     if (updateError) {
@@ -726,7 +720,6 @@ export function createDb(supabase) {
     linkScore,
     unlink,
     signedUrl,
-    thumbnailUrls,
     addThumbnail,
     download,
     scoreFiles,

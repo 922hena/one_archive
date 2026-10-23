@@ -3,6 +3,8 @@
 // Original photos never reach this code: the PDF is built on the device first.
 
 const BUCKET = "scores";
+// Paths are never reused (new UUID per file, no upsert), so browsers may keep files for a year.
+export const CACHE_SECONDS = "31536000";
 export const MAX_PDF_UPLOAD_BYTES = 20 * 1024 * 1024;
 export const RETRY_DELAYS_MS = [1000, 3000, 7000];
 
@@ -72,7 +74,7 @@ async function attempt(supabase, userId, draft, onProgress) {
     const pdfPath = `${userId}/${scoreId}/${fileId}.pdf`;
     const { error: uploadError } = await supabase.storage
       .from(BUCKET)
-      .upload(pdfPath, draft.pdf, { contentType: "application/pdf", upsert: false });
+      .upload(pdfPath, draft.pdf, { contentType: "application/pdf", cacheControl: CACHE_SECONDS, upsert: false });
     if (uploadError) throw uploadError;
     uploadedPaths.push(pdfPath);
 
@@ -95,7 +97,7 @@ async function attempt(supabase, userId, draft, onProgress) {
       const path = `${userId}/${scoreId}/thumb-${thumbId}.${draft.thumb.ext}`;
       const { error: thumbError } = await supabase.storage
         .from(BUCKET)
-        .upload(path, draft.thumb.blob, { contentType: draft.thumb.mime, upsert: false });
+        .upload(path, draft.thumb.blob, { contentType: draft.thumb.mime, cacheControl: CACHE_SECONDS, upsert: false });
       if (!thumbError) {
         uploadedPaths.push(path);
         thumbnailPath = path;

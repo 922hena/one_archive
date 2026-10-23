@@ -1,4 +1,5 @@
 import { SCORE_BUCKET } from "./supabase.js";
+import { CACHE_SECONDS } from "./upload-prepared.js";
 
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const STALE_UPLOAD_MS = 15 * 60 * 1000;
@@ -49,7 +50,7 @@ async function storeFile(supabase, userId, scoreId, file, pageNo, uploadedPaths)
   const path = `${userId}/${scoreId}/${fileId}.${EXTENSION_BY_MIME[mimeType]}`;
   const { error: uploadError } = await supabase.storage
     .from(SCORE_BUCKET)
-    .upload(path, file, { contentType: mimeType, upsert: false });
+    .upload(path, file, { contentType: mimeType, cacheControl: CACHE_SECONDS, upsert: false });
   if (uploadError) throw uploadError;
   uploadedPaths.push(path);
   const { error: fileError } = await supabase.from("score_files").insert({

@@ -28,44 +28,24 @@ export function loadPdfJs() {
   return pdfjsPromise;
 }
 
-// The stored small thumbnail (a signed URL from db.thumbnailUrls). Never downloads the PDF.
+// A small thumbnail image from an object URL. The URL is released once the image is decoded.
 export async function thumbnailImage(url) {
   const img = h("img", { alt: "", draggable: "false", decoding: "async" });
   img.src = url;
-  await img.decode();
+  try {
+    await img.decode();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
   return img;
 }
 
-// First page only, drawn from the PDF itself. Used to make a thumbnail for Scores that don't have one yet.
-export async function renderThumbnail(ctx, file, width = 160) {
-  if (file.mime_type !== "application/pdf") {
-    const img = h("img", { alt: "", draggable: "false" });
-    img.src = await ctx.db.signedUrl(file.storage_path);
-    await img.decode().catch(() => {});
-    return img;
-  }
-  const [lib, blob] = await Promise.all([loadPdfJs(), ctx.db.download(file.storage_path)]);
-  const doc = await lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
-  try {
-    const page = await doc.getPage(1);
-    const base = page.getViewport({ scale: 1 });
-    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-    const viewport = page.getViewport({ scale: (width / base.width) * pixelRatio });
-    const canvas = h("canvas", { "aria-hidden": "true" });
-    canvas.width = Math.floor(viewport.width);
-    canvas.height = Math.floor(viewport.height);
-    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
-    return canvas;
-  } finally {
-    doc.destroy();
-  }
-}
-
-// Opens a short-lived signed URL. The tab is opened before awaiting so popup blockers allow it.
-export async function openOriginal(ctx, file) {
+// localUrl: the viewer's already-downloaded copy, so the file isn't fetched a second time.
+// Without it a short-lived signed URL is used. The tab is opened before awaiting so popup blockers allow it.
+export async function openOriginal(ctx, file, localUrl = null) {
   const tab = window.open("about:blank", "_blank");
   try {
-    const url = await ctx.db.signedUrl(file.storage_path);
+    const url = (await localUrl?.catch(() => null)) ?? (await ctx.db.signedUrl(file.storage_path));
     if (tab) {
       tab.opener = null;
       tab.location.href = url;
@@ -86,6 +66,7 @@ export function openViewer(ctx, score) {
   }
 
   const pages = [];
+  const fileBlobs = new Map();
   const blobUrls = new Map();
   const pdfDocs = new Map();
   const rendered = new Map();
@@ -112,7 +93,7 @@ export function openViewer(ctx, score) {
     h("div", { class: "viewer-bar" },
       h("strong", { class: "viewer-title", translate: "no", text: displayScoreTitle(score) }),
       counter,
-      h("button", { type: "button", class: "viewer-tool", onclick: () => openOriginal(ctx, pages[index]?.file ?? files[0]) }, t("viewer.original")),
+      h("button", { type: "button", class: "viewer-tool", onclick: () => openFile(pages[index]?.file ?? files[0]) }, t("viewer.original")),
       fullscreenButton,
       h("button", { type: "button", class: "viewer-tool is-close", "aria-label": t("common.close"), onclick: () => dialog.close() }, "×")
     ),
@@ -128,18 +109,32 @@ export function openViewer(ctx, score) {
     }, ms);
   }
 
+  // One download per file per viewer; pages, PDF rendering and "Original file" all share it.
+  function fileBlob(file) {
+    if (!fileBlobs.has(file.id)) {
+      const promise = ctx.db.download(file.storage_path);
+      promise.catch(() => fileBlobs.delete(file.id));
+      fileBlobs.set(file.id, promise);
+    }
+    return fileBlobs.get(file.id);
+  }
+
   function blobUrl(file) {
     if (!blobUrls.has(file.id)) {
-      const promise = ctx.db.download(file.storage_path).then((blob) => URL.createObjectURL(blob));
+      const promise = fileBlob(file).then((blob) => URL.createObjectURL(blob));
       promise.catch(() => blobUrls.delete(file.id));
       blobUrls.set(file.id, promise);
     }
     return blobUrls.get(file.id);
   }
 
+  function openFile(file) {
+    openOriginal(ctx, file, fileBlobs.has(file.id) ? blobUrl(file) : null);
+  }
+
   function pdfDoc(file) {
     if (!pdfDocs.has(file.id)) {
-      const promise = Promise.all([loadPdfJs(), ctx.db.download(file.storage_path)])
+      const promise = Promise.all([loadPdfJs(), fileBlob(file)])
         .then(async ([lib, blob]) => lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise);
       promise.catch(() => pdfDocs.delete(file.id));
       pdfDocs.set(file.id, promise);
@@ -351,7 +346,7 @@ export function openViewer(ctx, score) {
       holder.replaceChildren(
         h("div", { class: "viewer-message" },
           h("p", { text: errorMessage(error, files.some((file) => file.mime_type === "application/pdf") ? "viewer.pdfFailed" : "viewer.loadFailed") }),
-          h("button", { type: "button", class: "viewer-tool", onclick: () => openOriginal(ctx, files[0]) }, t("viewer.original"))
+          h("button", { type: "button", class: "viewer-tool", onclick: () => openFile(files[0]) }, t("viewer.original"))
         )
       );
     });

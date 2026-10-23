@@ -58,8 +58,9 @@ function fakeClient({ failures = {}, scores = [], objects = [] } = {}) {
     },
     storage: {
       from: () => ({
-        upload: async (path) => {
+        upload: async (path, _body, options) => {
           state.calls.push(`upload:${path.split("/").pop().split(".")[0].slice(0, 5)}`);
+          state.uploadOptions = [...(state.uploadOptions ?? []), options];
           const error = fail(path.includes("thumb-") ? "upload:thumb" : "upload:pdf");
           if (!error) state.objects.push(path);
           return { error };
@@ -94,6 +95,9 @@ test("stores one PDF, one thumbnail and marks the Score ready", async () => {
   assert.equal(client.state.files[0].page_no, 1);
   assert.deepEqual(client.state.objects.sort(), [`${USER}/${id}/${draft().fileId}.pdf`, `${USER}/${id}/thumb-${draft().thumbId}.webp`].sort());
   assert.match(score.thumbnail_path, new RegExp(`^${USER}/${id}/thumb-[0-9a-f-]{36}\\.(webp|jpg)$`));
+  // Paths are never reused, so both files may stay in the browser cache for a year.
+  assert.deepEqual(client.state.uploadOptions.map((options) => options.cacheControl), ["31536000", "31536000"]);
+  assert.ok(client.state.uploadOptions.every((options) => options.upsert === false));
 });
 
 test("a thumbnail that cannot be stored does not stop the Score", async () => {
