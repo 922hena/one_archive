@@ -247,7 +247,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .viewer-tool { min-height: 32px; padding: 0 10px; border: 1px solid rgba(255, 255, 255, 0.28); border-radius: var(--radius); background: transparent; color: #fff; cursor: pointer; white-space: nowrap; font-size: 0.86rem; }
 .viewer-tool:hover { background: rgba(255, 255, 255, 0.1); }
 .viewer-tool.is-close { width: 34px; padding: 0; font-size: 1.2rem; }
-.viewer-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; touch-action: pan-y pinch-zoom; user-select: none; -webkit-user-select: none; }
+.viewer-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
 .viewer-holder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 8px; }
 .viewer-page { display: block; max-width: 100%; max-height: 100%; object-fit: contain; background: #fff; box-shadow: 0 2px 18px rgba(0, 0, 0, 0.45); -webkit-user-drag: none; }
 .viewer-message { color: #c9cbc8; text-align: center; }
@@ -261,7 +261,17 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* Performance Mode: several Scores in one viewer */
 .viewer-bar { flex-wrap: wrap; }
-.viewer.is-immersive .viewer-lineup { display: none; }
+.viewer.is-immersive .viewer-lineup, .viewer.is-immersive .viewer-tools { display: none; }
+.viewer-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 12px; background: #111211; border-top: 1px solid rgba(255, 255, 255, 0.12); flex: none; }
+.viewer-tools .viewer-tool { min-height: 36px; }
+.viewer-tool[aria-pressed="true"] { background: #fff; color: #0B0B0D; border-color: #fff; }
+.viewer-tool:disabled { opacity: 0.35; cursor: default; }
+.viewer-tools .num { min-width: 56px; }
+.viewer-page, .viewer-spread { transform-origin: center; will-change: transform; }
+.viewer-spread { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 100%; }
+.viewer-spread .viewer-page { max-width: calc(50% - 4px); }
+.viewer-stage.is-zoomed { cursor: grab; }
+@media (pointer: coarse) { .viewer-tools .viewer-tool, .viewer-bar .viewer-tool { min-height: 44px; } .viewer-tool.is-close { width: 44px; } }
 .viewer-lineup { position: absolute; top: 0; right: 0; bottom: 0; width: min(440px, 100%); display: flex; flex-direction: column; background: #111211; border-left: 1px solid rgba(255, 255, 255, 0.18); z-index: 3; }
 .viewer-lineup[hidden] { display: none; }
 .lineup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.18); }

@@ -100,3 +100,58 @@ test("songs that are still loading are not counted yet", () => {
   assert.deepEqual(locatePage([3, undefined], 2), { song: 0, page: 2 });
   assert.deepEqual(locatePage([], 0), { song: 0, page: 0 });
 });
+
+import { AUTO_SECONDS, ZOOM_MAX, clampPan, clampZoom, fitWidthZoom, nextAutoSeconds, nextIndex, prevIndex, spreadSize } from "../js/performance.js";
+
+test("zoom stays between fit page and the maximum", () => {
+  assert.equal(clampZoom(0.2), 1);
+  assert.equal(clampZoom(2.5), 2.5);
+  assert.equal(clampZoom(99), ZOOM_MAX);
+  assert.equal(clampZoom(NaN), 1);
+});
+
+test("a zoomed page cannot be dragged past the screen edge", () => {
+  const content = { w: 400, h: 600 };
+  const box = { w: 800, h: 600 };
+  assert.deepEqual(clampPan({ x: 500, y: 500 }, 1, content, box), { x: 0, y: 0 });
+  assert.deepEqual(clampPan({ x: 500, y: -500 }, 2, content, box), { x: 0, y: -300 });
+  assert.deepEqual(clampPan({ x: -50, y: 10 }, 3, content, box), { x: -50, y: 10 });
+});
+
+test("fit width zooms a narrow page up to the screen width", () => {
+  assert.equal(fitWidthZoom({ w: 400, h: 600 }, { w: 800, h: 600 }), 2);
+  assert.equal(fitWidthZoom({ w: 900, h: 600 }, { w: 800, h: 600 }), 1);
+  assert.equal(fitWidthZoom({ w: 0, h: 0 }, { w: 800, h: 600 }), 1);
+});
+
+test("auto turn cycles through its steps and back to off", () => {
+  let current = 0;
+  const seen = [];
+  for (let n = 0; n < AUTO_SECONDS.length; n += 1) {
+    current = nextAutoSeconds(current);
+    seen.push(current);
+  }
+  assert.deepEqual(seen, [10, 20, 30, 60, 0]);
+});
+
+test("a two-page view never mixes two Scores", () => {
+  const ids = [0, 0, 0, 1, 1];
+  assert.equal(spreadSize(ids, 0, false), 1);
+  assert.equal(spreadSize(ids, 0, true), 2);
+  assert.equal(spreadSize(ids, 2, true), 1);
+  assert.equal(spreadSize(ids, 3, true), 2);
+  assert.equal(spreadSize(ids, 4, true), 1);
+});
+
+test("next and previous follow the two-page view", () => {
+  const ids = [0, 0, 0, 1, 1];
+  assert.equal(nextIndex(ids, 0, true), 2);
+  assert.equal(nextIndex(ids, 2, true), 3);
+  assert.equal(nextIndex(ids, 3, true), 5);
+  assert.equal(nextIndex(ids, 0, false), 1);
+  assert.equal(prevIndex(ids, 0, true), -1);
+  assert.equal(prevIndex(ids, 2, true), 0);
+  assert.equal(prevIndex(ids, 3, true), 1); // back into Score 0's last spread (pages 2-3)
+  assert.equal(prevIndex(ids, 4, true), 3);
+  assert.equal(prevIndex(ids, 4, false), 3);
+});

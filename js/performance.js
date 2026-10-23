@@ -60,3 +60,56 @@ export function locatePage(counts, index) {
   }
   return { song: 0, page: 0 };
 }
+
+// ---- zoom, two-page view and auto page turn ----
+
+export const ZOOM_MIN = 1;
+export const ZOOM_MAX = 4;
+export const ZOOM_STEP = 0.25;
+// Seconds per page for auto page turn. 0 = off.
+export const AUTO_SECONDS = [0, 10, 20, 30, 60];
+
+export function clampZoom(zoom) {
+  if (!Number.isFinite(zoom)) return ZOOM_MIN;
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
+}
+
+// Keeps a zoomed page from being dragged away from the screen: the page edge stops at the screen edge.
+// content/box are the unzoomed sizes { w, h }.
+export function clampPan(pan, zoom, content, box) {
+  const limitX = Math.max(0, (content.w * zoom - box.w) / 2);
+  const limitY = Math.max(0, (content.h * zoom - box.h) / 2);
+  return {
+    x: Math.min(limitX, Math.max(-limitX, pan.x)),
+    y: Math.min(limitY, Math.max(-limitY, pan.y))
+  };
+}
+
+// Zoom at which the page is as wide as the screen (never below "fit page").
+export function fitWidthZoom(content, box) {
+  if (!content.w) return ZOOM_MIN;
+  return clampZoom(box.w / content.w);
+}
+
+export function nextAutoSeconds(current) {
+  const at = AUTO_SECONDS.indexOf(current);
+  return AUTO_SECONDS[(at + 1) % AUTO_SECONDS.length];
+}
+
+// songIds[i] = song of global page i. A two-page view never mixes two songs.
+export function spreadSize(songIds, index, twoUp) {
+  return twoUp && index + 1 < songIds.length && songIds[index + 1] === songIds[index] ? 2 : 1;
+}
+
+// First page of the next view (equals songIds.length when there is none).
+export function nextIndex(songIds, index, twoUp) {
+  return index + spreadSize(songIds, index, twoUp);
+}
+
+// First page of the previous view, or -1 at the very start.
+export function prevIndex(songIds, index, twoUp) {
+  if (index <= 0) return -1;
+  if (twoUp && index >= 2 && songIds[index - 2] === songIds[index - 1]) return index - 2;
+  return index - 1;
+}
+

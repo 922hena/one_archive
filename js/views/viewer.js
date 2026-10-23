@@ -1,7 +1,20 @@
 import { t } from "../i18n.js";
 import { h, notify, errorMessage, displayScoreTitle } from "../ui.js";
 import { comparePages } from "../pages.js";
-import { locatePage, songStarts } from "../performance.js";
+import {
+  ZOOM_MAX,
+  ZOOM_STEP,
+  clampPan,
+  clampZoom,
+  fitWidthZoom,
+  locatePage,
+  nextAutoSeconds,
+  nextIndex,
+  prevIndex,
+  songStarts,
+  spreadSize
+} from "../performance.js";
+import { countOfflineFiles, getOfflineFile, removeOfflineFiles, requestPersistence, saveOfflineFile } from "../offline-files.js";
 
 // Legacy build: also runs on older iPad Safari.
 const PDFJS_BASE = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/";
@@ -14,7 +27,27 @@ const TAP_PX = 10;
 const NEXT_KEYS = new Set(["ArrowRight", "ArrowDown", "PageDown"]);
 const PREV_KEYS = new Set(["ArrowLeft", "ArrowUp", "PageUp"]);
 
+const PREFS_KEY = "yearscore-perform";
+
 let pdfjsPromise = null;
+
+// Device-only view settings (two pages). Nothing is sent to the server.
+function loadPrefs() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}");
+    return { twoUp: saved.twoUp === true };
+  } catch {
+    return { twoUp: false };
+  }
+}
+
+function savePrefs(prefs) {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    // private mode etc.: the setting just won't be remembered
+  }
+}
 
 export function loadPdfJs() {
   pdfjsPromise ??= import(`${PDFJS_BASE}pdf.min.mjs`)
@@ -104,6 +137,18 @@ export function openPerformance(ctx, { title, songs }) {
   let noticeTimer = null;
   let resizeTimer = null;
 
+  const prefs = loadPrefs();
+  let twoUp = prefs.twoUp;
+  let zoom = 1;
+  let pan = { x: 0, y: 0 };
+  let autoSeconds = 0; // always starts off, so pages never turn by surprise
+  let autoTimer = null;
+  let offlineBusy = false;
+  const touches = new Map(); // pointer id -> { x, y } while fingers are down
+  let gesture = null; // { kind: "pan" | "pinch", ... }
+  let moved = false;
+  const allFiles = songFiles.flat();
+
   const counter = h("span", { class: "viewer-count num", "aria-live": "polite" });
   const holder = h("div", { class: "viewer-holder" }, h("p", { class: "viewer-message", text: t("common.loading") }));
   const notice = h("p", { class: "viewer-notice", role: "status", hidden: true });
@@ -131,6 +176,16 @@ export function openPerformance(ctx, { title, songs }) {
   const lineupButton = multi
     ? h("button", { type: "button", class: "viewer-tool", "aria-expanded": "false", onclick: () => toggleLineup() }, t("perform.lineup"))
     : null;
+  const zoomOutButton = h("button", { type: "button", class: "viewer-tool", "aria-label": t("perform.zoomOut"), onclick: () => setZoom(zoom - ZOOM_STEP) }, "−");
+  const zoomLabel = h("button", { type: "button", class: "viewer-tool num", "aria-label": t("perform.zoomFit"), onclick: () => setZoom(1) }, "100%");
+  const zoomInButton = h("button", { type: "button", class: "viewer-tool", "aria-label": t("perform.zoomIn"), onclick: () => setZoom(zoom + ZOOM_STEP) }, "+");
+  const fitWidthButton = h("button", { type: "button", class: "viewer-tool", onclick: fitWidth }, t("perform.fitWidth"));
+  const twoUpButton = h("button", { type: "button", class: "viewer-tool", "aria-pressed": String(twoUp), onclick: toggleTwoUp }, t("perform.twoPages"));
+  const autoButton = h("button", { type: "button", class: "viewer-tool", "aria-pressed": "false", onclick: cycleAuto }, t("perform.autoOff"));
+  const offlineButton = h("button", { type: "button", class: "viewer-tool", "aria-pressed": "false", onclick: toggleOffline }, t("perform.offlineSave"));
+  const tools = h("div", { class: "viewer-tools", role: "group", "aria-label": t("perform.viewTools") },
+    zoomOutButton, zoomLabel, zoomInButton, fitWidthButton, twoUpButton, autoButton, offlineButton
+  );
   const dialog = h(
     "dialog",
     { class: "viewer", "aria-label": title },
@@ -144,6 +199,7 @@ export function openPerformance(ctx, { title, songs }) {
       fullscreenButton,
       h("button", { type: "button", class: "viewer-tool is-close", "aria-label": t("common.close"), onclick: () => dialog.close() }, "×")
     ),
+    tools,
     stage
   );
 
@@ -159,7 +215,8 @@ export function openPerformance(ctx, { title, songs }) {
   // One download per file per viewer; pages, PDF rendering and "Original file" all share it.
   function fileBlob(file) {
     if (!fileBlobs.has(file.id)) {
-      const promise = ctx.db.download(file.storage_path);
+      // A copy saved on this device is used first, so nothing is downloaded again.
+      const promise = getOfflineFile(file.storage_path).then((saved) => saved ?? ctx.db.download(file.storage_path));
       promise.catch(() => fileBlobs.delete(file.id));
       fileBlobs.set(file.id, promise);
     }
@@ -234,11 +291,13 @@ export function openPerformance(ctx, { title, songs }) {
     const done = loadedSongs === songs.length;
     const total = done ? String(pages.length) : `${pages.length}+`;
     titleLabel.textContent = (multi && songs[song].label ? `${songs[song].number} ${songs[song].label} · ` : "") + displayScoreTitle(songs[song].score);
+    const span = spreadSize(pageSongs(), index, twoUp);
+    const range = (first) => (span === 2 ? `${first}–${first + 1}` : String(first));
     counter.textContent = multi
-      ? t("perform.count", { song: song + 1, songs: songs.length, page: page + 1, pages: counts[song], total, current: index + 1 })
-      : t("viewer.count", { page: index + 1, total });
+      ? t("perform.count", { song: song + 1, songs: songs.length, page: range(page + 1), pages: counts[song], total, current: range(index + 1) })
+      : t("viewer.count", { page: range(index + 1), total });
     prevButton.disabled = index === 0;
-    nextButton.disabled = done && index >= pages.length - 1;
+    nextButton.disabled = done && index + span >= pages.length;
     if (multi) {
       prevSongButton.disabled = song === 0;
       nextSongButton.disabled = song >= songs.length - 1;
@@ -280,6 +339,7 @@ export function openPerformance(ctx, { title, songs }) {
     lineupOpen = force ?? !lineupOpen;
     lineupPanel.hidden = !lineupOpen;
     lineupButton.setAttribute("aria-expanded", String(lineupOpen));
+    scheduleAuto(); // paused while the Lineup is open
     if (lineupOpen) {
       renderLineup();
       lineupPanel.querySelector(".lineup-item.is-active .lineup-song")?.focus();
@@ -322,6 +382,7 @@ export function openPerformance(ctx, { title, songs }) {
 
   function onVisibility() {
     if (document.visibilityState === "visible") keepAwake();
+    scheduleAuto();
   }
 
   async function renderImage(page) {
@@ -336,7 +397,8 @@ export function openPerformance(ctx, { title, songs }) {
     const pdfPage = await doc.getPage(page.pdfPage);
     const base = pdfPage.getViewport({ scale: 1 });
     const box = holder.getBoundingClientRect();
-    const fit = Math.max(0.1, Math.min((box.width - 16) / base.width, (box.height - 16) / base.height));
+    const slots = twoUp ? 2 : 1;
+    const fit = Math.max(0.1, Math.min((box.width / slots - 16) / base.width, (box.height - 16) / base.height));
     let pixelRatio = Math.min(window.devicePixelRatio || 1, 3);
     const area = base.width * fit * pixelRatio * base.height * fit * pixelRatio;
     if (area > MAX_CANVAS_PIXELS) pixelRatio *= Math.sqrt(MAX_CANVAS_PIXELS / area);
@@ -374,23 +436,32 @@ export function openPerformance(ctx, { title, songs }) {
   }
 
   function evict() {
+    const around = KEEP_AROUND + (twoUp ? 2 : 0);
     for (const key of rendered.keys()) {
-      if (Math.abs(key - index) > KEEP_AROUND) rendered.delete(key);
+      if (Math.abs(key - index) > around) rendered.delete(key);
     }
+  }
+
+  function pageSongs() {
+    return pages.map((page) => page.song);
   }
 
   async function show(at) {
     index = at;
     const token = ++showToken;
     updateBar();
+    scheduleAuto();
     if (lineupOpen) renderLineup();
     const slow = setTimeout(() => {
       if (token === showToken) holder.replaceChildren(h("p", { class: "viewer-message", text: t("common.loading") }));
     }, 150);
     try {
-      const element = await renderPage(index);
+      const span = spreadSize(pageSongs(), index, twoUp);
+      const elements = await Promise.all(Array.from({ length: span }, (_, n) => renderPage(index + n)));
       if (token !== showToken || closed) return;
-      holder.replaceChildren(element);
+      holder.replaceChildren(span === 2 ? h("div", { class: "viewer-spread" }, ...elements) : elements[0]);
+      pan = { x: 0, y: 0 };
+      applyZoom();
     } catch (error) {
       if (token !== showToken || closed) return;
       holder.replaceChildren(
@@ -402,14 +473,17 @@ export function openPerformance(ctx, { title, songs }) {
     } finally {
       clearTimeout(slow);
     }
-    preload(index + 1);
-    preload(index - 1);
+    const after = nextIndex(pageSongs(), index, twoUp);
+    preload(after);
+    if (twoUp) preload(after + 1);
+    preload(prevIndex(pageSongs(), index, twoUp));
     evict();
   }
 
+  // step > 0: next page (or next two pages); step < 0: previous.
   async function turn(step) {
     if (!pages.length) return;
-    const target = index + step;
+    let target = step > 0 ? nextIndex(pageSongs(), index, twoUp) : prevIndex(pageSongs(), index, twoUp);
     if (target < 0) {
       flash(t("viewer.first"));
       return;
@@ -419,12 +493,124 @@ export function openPerformance(ctx, { title, songs }) {
       holder.replaceChildren(h("p", { class: "viewer-message", text: t("common.loading") }));
       await ready[loadedSongs].promise;
       if (closed) return;
+      target = nextIndex(pageSongs(), index, twoUp);
     }
     if (target >= pages.length) {
       flash(t("viewer.last"));
       return;
     }
     show(target);
+  }
+
+  // ---- zoom ----
+  function pageElement() {
+    const el = holder.firstElementChild;
+    return el && (el.classList.contains("viewer-page") || el.classList.contains("viewer-spread")) ? el : null;
+  }
+
+  function sizes() {
+    const el = pageElement();
+    const box = holder.getBoundingClientRect();
+    return { content: { w: el?.offsetWidth ?? 0, h: el?.offsetHeight ?? 0 }, box: { w: box.width, h: box.height } };
+  }
+
+  function applyZoom() {
+    const el = pageElement();
+    zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+    zoomOutButton.disabled = zoom <= 1;
+    zoomInButton.disabled = zoom >= ZOOM_MAX;
+    if (!el) return;
+    const { content, box } = sizes();
+    pan = clampPan(pan, zoom, content, box);
+    el.style.transform = zoom === 1 ? "" : `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`;
+    stage.classList.toggle("is-zoomed", zoom > 1);
+  }
+
+  function setZoom(next) {
+    zoom = clampZoom(Math.round(next * 100) / 100);
+    if (zoom === 1) pan = { x: 0, y: 0 };
+    applyZoom();
+  }
+
+  function fitWidth() {
+    const { content, box } = sizes();
+    setZoom(fitWidthZoom(content, { w: box.w - 16, h: box.h }));
+  }
+
+  function toggleTwoUp() {
+    twoUp = !twoUp;
+    twoUpButton.setAttribute("aria-pressed", String(twoUp));
+    savePrefs({ twoUp });
+    rendered.clear(); // pages are drawn at half width in the two-page view
+    show(index);
+  }
+
+  // ---- auto page turn: stops at the end of a Score, never jumps to the next one ----
+  function scheduleAuto() {
+    clearTimeout(autoTimer);
+    if (!autoSeconds || closed || lineupOpen || document.hidden) return;
+    autoTimer = setTimeout(autoTick, autoSeconds * 1000);
+  }
+
+  function autoTick() {
+    if (closed || !autoSeconds) return;
+    const ids = pageSongs();
+    const target = nextIndex(ids, index, twoUp);
+    if (target >= pages.length || ids[target] !== ids[index]) {
+      autoSeconds = 0;
+      updateAutoButton();
+      flash(t("perform.autoEnded"), 3000);
+      return;
+    }
+    show(target);
+  }
+
+  function updateAutoButton() {
+    autoButton.textContent = autoSeconds ? t("perform.autoOn", { seconds: autoSeconds }) : t("perform.autoOff");
+    autoButton.setAttribute("aria-pressed", String(autoSeconds > 0));
+    scheduleAuto();
+  }
+
+  function cycleAuto() {
+    autoSeconds = nextAutoSeconds(autoSeconds);
+    updateAutoButton();
+  }
+
+  // ---- save on this device ----
+  async function refreshOffline() {
+    const saved = await countOfflineFiles(allFiles.map((file) => file.storage_path));
+    if (closed) return;
+    const all = saved === allFiles.length;
+    offlineButton.textContent = all ? t("perform.offlineSaved") : t("perform.offlineSave");
+    offlineButton.setAttribute("aria-pressed", String(all));
+    offlineButton.dataset.saved = all ? "true" : "false";
+  }
+
+  async function toggleOffline() {
+    if (offlineBusy) return;
+    offlineBusy = true;
+    offlineButton.disabled = true;
+    try {
+      if (offlineButton.dataset.saved === "true") {
+        await removeOfflineFiles(allFiles.map((file) => file.storage_path));
+        flash(t("perform.offlineRemoved"));
+      } else {
+        requestPersistence();
+        let done = 0;
+        for (const file of allFiles) {
+          offlineButton.textContent = t("perform.offlineSaving", { done, total: allFiles.length });
+          await saveOfflineFile(file.storage_path, await fileBlob(file));
+          done += 1;
+        }
+        flash(t("perform.offlineDone"), 3200);
+      }
+    } catch (error) {
+      flash(t("perform.offlineFailed"), 4000);
+    } finally {
+      offlineBusy = false;
+      offlineButton.disabled = false;
+      await refreshOffline();
+    }
   }
 
   // Previous / next song: jumps to the first page of it.
@@ -452,6 +638,9 @@ export function openPerformance(ctx, { title, songs }) {
     else if (event.key === " " && !onButton) step = event.shiftKey ? -1 : 1;
     else if (event.key === "Home") step = -index;
     else if (event.key === "End") step = pages.length - 1 - index;
+    else if (!onButton && (event.key === "+" || event.key === "=")) return void setZoom(zoom + ZOOM_STEP);
+    else if (!onButton && (event.key === "-" || event.key === "_")) return void setZoom(zoom - ZOOM_STEP);
+    else if (!onButton && event.key === "0") return void setZoom(1);
     if (!step) return;
     event.preventDefault();
     const now = Date.now();
@@ -464,14 +653,54 @@ export function openPerformance(ctx, { title, songs }) {
 
   function onPointerDown(event) {
     if (event.target.closest("button, .viewer-lineup")) return;
+    touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    moved = false;
+    if (touches.size === 2) {
+      // two fingers: pinch to zoom
+      const [a, b] = [...touches.values()];
+      gesture = { kind: "pinch", dist: Math.hypot(a.x - b.x, a.y - b.y), zoom };
+      pointer = null;
+      return;
+    }
     pointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
   }
 
+  function onPointerMove(event) {
+    const point = touches.get(event.pointerId);
+    if (!point) return;
+    const before = { ...point };
+    point.x = event.clientX;
+    point.y = event.clientY;
+    if (gesture?.kind === "pinch" && touches.size >= 2) {
+      const [a, b] = [...touches.values()];
+      if (gesture.dist > 0) {
+        zoom = clampZoom((gesture.zoom * Math.hypot(a.x - b.x, a.y - b.y)) / gesture.dist);
+        applyZoom();
+      }
+      moved = true;
+      return;
+    }
+    // one finger on a zoomed page moves the page instead of turning it
+    if (zoom > 1 && pointer?.id === event.pointerId) {
+      if (Math.hypot(point.x - pointer.x, point.y - pointer.y) > TAP_PX) moved = true;
+      pan = { x: pan.x + point.x - before.x, y: pan.y + point.y - before.y };
+      applyZoom();
+    }
+  }
+
   function onPointerUp(event) {
+    const wasPinch = gesture?.kind === "pinch";
+    touches.delete(event.pointerId);
+    if (wasPinch) {
+      if (!touches.size) gesture = null;
+      pointer = null;
+      return;
+    }
     if (!pointer || pointer.id !== event.pointerId) return;
     const dx = event.clientX - pointer.x;
     const dy = event.clientY - pointer.y;
     pointer = null;
+    if (zoom > 1 && moved) return;
     if (Math.abs(dx) >= SWIPE_PX && Math.abs(dx) > Math.abs(dy)) {
       turn(dx < 0 ? 1 : -1);
       return;
@@ -512,10 +741,19 @@ export function openPerformance(ctx, { title, songs }) {
   // On the document: after a tap on the page, focus may leave the dialog, but pedals must keep working.
   document.addEventListener("keydown", onKeyDown);
   stage.addEventListener("pointerdown", onPointerDown);
+  stage.addEventListener("pointermove", onPointerMove);
   stage.addEventListener("pointerup", onPointerUp);
-  stage.addEventListener("pointercancel", () => {
+  stage.addEventListener("pointercancel", (event) => {
+    touches.delete(event.pointerId);
     pointer = null;
+    gesture = null;
   });
+  // trackpad pinch / Ctrl + wheel
+  stage.addEventListener("wheel", (event) => {
+    if (!event.ctrlKey) return;
+    event.preventDefault();
+    setZoom(zoom - event.deltaY * 0.01);
+  }, { passive: false });
   window.addEventListener("resize", onResize);
   document.addEventListener("fullscreenchange", onFullscreenChange);
   document.addEventListener("visibilitychange", onVisibility);
@@ -530,6 +768,7 @@ export function openPerformance(ctx, { title, songs }) {
     releaseWake();
     clearTimeout(noticeTimer);
     clearTimeout(resizeTimer);
+    clearTimeout(autoTimer);
     document.removeEventListener("visibilitychange", onVisibility);
     document.removeEventListener("keydown", onKeyDown);
     window.removeEventListener("resize", onResize);
@@ -547,6 +786,8 @@ export function openPerformance(ctx, { title, songs }) {
 
   keepAwake();
   loadAllSongs();
+  applyZoom();
+  refreshOffline();
   ready[0].promise.then(() => {
     if (closed) return;
     show(0);
