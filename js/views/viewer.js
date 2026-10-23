@@ -2,17 +2,26 @@ import { t } from "../i18n.js";
 import { h, notify, errorMessage, displayScoreTitle } from "../ui.js";
 import { comparePages } from "../pages.js";
 import {
+  AUTO_DEFAULT,
+  AUTO_MAX,
+  AUTO_MIN,
+  MAX_PER_VIEW,
   ZOOM_MAX,
   ZOOM_STEP,
   clampPan,
+  clampPerView,
   clampZoom,
   fitWidthZoom,
+  formatSeconds,
+  gridFor,
   locatePage,
-  nextAutoSeconds,
   nextIndex,
+  pageTimeKey,
+  parseSeconds,
   prevIndex,
   songStarts,
-  spreadSize
+  spreadSize,
+  viewSeconds
 } from "../performance.js";
 import { countOfflineFiles, getOfflineFile, removeOfflineFiles, requestPersistence, saveOfflineFile } from "../offline-files.js";
 
@@ -28,25 +37,41 @@ const NEXT_KEYS = new Set(["ArrowRight", "ArrowDown", "PageDown"]);
 const PREV_KEYS = new Set(["ArrowLeft", "ArrowUp", "PageUp"]);
 
 const PREFS_KEY = "yearscore-perform";
+const TIMES_KEY = "yearscore-perform-times";
 
 let pdfjsPromise = null;
 
-// Device-only view settings (two pages). Nothing is sent to the server.
-function loadPrefs() {
+// Device-only settings: pages on screen, default auto-turn seconds, and seconds per page.
+// Nothing here is sent to the server.
+function readJson(key) {
   try {
-    const saved = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}");
-    return { twoUp: saved.twoUp === true };
+    const value = JSON.parse(localStorage.getItem(key) ?? "{}");
+    return value && typeof value === "object" ? value : {};
   } catch {
-    return { twoUp: false };
+    return {};
   }
 }
 
-function savePrefs(prefs) {
+function writeJson(key, value) {
   try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+    localStorage.setItem(key, JSON.stringify(value));
   } catch {
     // private mode etc.: the setting just won't be remembered
   }
+}
+
+function loadPrefs() {
+  const saved = readJson(PREFS_KEY);
+  const fallback = parseSeconds(saved.autoDefault);
+  return {
+    // older versions saved only "two pages on/off"
+    perView: clampPerView(saved.perView ?? (saved.twoUp === true ? 2 : 1)),
+    autoDefault: fallback.ok && fallback.value ? fallback.value : AUTO_DEFAULT
+  };
+}
+
+function savePrefs(prefs) {
+  writeJson(PREFS_KEY, prefs);
 }
 
 export function loadPdfJs() {
@@ -138,11 +163,14 @@ export function openPerformance(ctx, { title, songs }) {
   let resizeTimer = null;
 
   const prefs = loadPrefs();
-  let twoUp = prefs.twoUp;
+  let perView = prefs.perView; // pages on one screen, 1 to 4
   let zoom = 1;
   let pan = { x: 0, y: 0 };
-  let autoSeconds = 0; // always starts off, so pages never turn by surprise
+  let autoOn = false; // always starts off, so pages never turn by surprise
+  let autoDefault = prefs.autoDefault;
+  const pageTimes = readJson(TIMES_KEY); // seconds per page; a page without one uses autoDefault
   let autoTimer = null;
+  let autoOpen = false;
   let offlineBusy = false;
   const touches = new Map(); // pointer id -> { x, y } while fingers are down
   let gesture = null; // { kind: "pan" | "pinch", ... }
@@ -162,7 +190,6 @@ export function openPerformance(ctx, { title, songs }) {
     ),
     lineupList
   );
-  const stage = h("div", { class: "viewer-stage" }, holder, prevButton, nextButton, notice, lineupPanel);
   const fullscreenButton = document.fullscreenEnabled
     ? h("button", { type: "button", class: "viewer-tool", onclick: toggleFullscreen }, t("viewer.fullscreen"))
     : null;
@@ -180,11 +207,43 @@ export function openPerformance(ctx, { title, songs }) {
   const zoomLabel = h("button", { type: "button", class: "viewer-tool num", "aria-label": t("perform.zoomFit"), onclick: () => setZoom(1) }, "100%");
   const zoomInButton = h("button", { type: "button", class: "viewer-tool", "aria-label": t("perform.zoomIn"), onclick: () => setZoom(zoom + ZOOM_STEP) }, "+");
   const fitWidthButton = h("button", { type: "button", class: "viewer-tool", onclick: fitWidth }, t("perform.fitWidth"));
-  const twoUpButton = h("button", { type: "button", class: "viewer-tool", "aria-pressed": String(twoUp), onclick: toggleTwoUp }, t("perform.twoPages"));
-  const autoButton = h("button", { type: "button", class: "viewer-tool", "aria-pressed": "false", onclick: cycleAuto }, t("perform.autoOff"));
+  const viewButtons = Array.from({ length: MAX_PER_VIEW }, (_, n) =>
+    h("button", {
+      type: "button",
+      class: "viewer-tool num",
+      "aria-label": t(n === 0 ? "perform.pagesOne" : "perform.pagesMany", { count: n + 1 }),
+      "aria-pressed": String(perView === n + 1),
+      onclick: () => setPerView(n + 1)
+    }, String(n + 1))
+  );
+  const viewGroup = h("div", { class: "viewer-view", role: "group", "aria-label": t("perform.pagesOnScreen") },
+    h("span", { class: "viewer-label", text: t("perform.pagesOnScreen") }),
+    ...viewButtons
+  );
+  const autoButton = h("button", { type: "button", class: "viewer-tool", "aria-pressed": "false", "aria-expanded": "false", onclick: () => toggleAutoPanel() }, t("perform.autoButton"));
+  const autoStart = h("button", { type: "button", class: "viewer-tool is-primary", onclick: toggleAuto }, t("perform.autoStart"));
+  const autoDefaultInput = secondsInput("auto-default", t("perform.autoDefault"), formatSeconds(autoDefault), onDefaultChange);
+  const autoRows = h("div", { class: "auto-rows" });
+  const autoPanel = h("section", { class: "viewer-auto", "aria-label": t("perform.autoTitle"), hidden: true },
+    h("div", { class: "lineup-head" },
+      h("strong", { text: t("perform.autoTitle") }),
+      h("button", { type: "button", class: "viewer-tool", onclick: () => toggleAutoPanel(false) }, t("common.close"))
+    ),
+    h("div", { class: "auto-body" },
+      h("div", { class: "auto-line" }, autoStart),
+      h("div", { class: "auto-line" },
+        h("label", { for: "auto-default", text: t("perform.autoDefault") }),
+        autoDefaultInput,
+        h("span", { text: t("perform.secondsUnit") })
+      ),
+      autoRows,
+      h("p", { class: "auto-hint", text: t("perform.autoHint") })
+    )
+  );
+  const stage = h("div", { class: "viewer-stage" }, holder, prevButton, nextButton, notice, lineupPanel, autoPanel);
   const offlineButton = h("button", { type: "button", class: "viewer-tool", "aria-pressed": "false", onclick: toggleOffline }, t("perform.offlineSave"));
   const tools = h("div", { class: "viewer-tools", role: "group", "aria-label": t("perform.viewTools") },
-    zoomOutButton, zoomLabel, zoomInButton, fitWidthButton, twoUpButton, autoButton, offlineButton
+    zoomOutButton, zoomLabel, zoomInButton, fitWidthButton, viewGroup, autoButton, offlineButton
   );
   const dialog = h(
     "dialog",
@@ -291,8 +350,8 @@ export function openPerformance(ctx, { title, songs }) {
     const done = loadedSongs === songs.length;
     const total = done ? String(pages.length) : `${pages.length}+`;
     titleLabel.textContent = (multi && songs[song].label ? `${songs[song].number} ${songs[song].label} · ` : "") + displayScoreTitle(songs[song].score);
-    const span = spreadSize(pageSongs(), index, twoUp);
-    const range = (first) => (span === 2 ? `${first}–${first + 1}` : String(first));
+    const span = spreadSize(pageSongs(), index, perView);
+    const range = (first) => (span > 1 ? `${first}–${first + span - 1}` : String(first));
     counter.textContent = multi
       ? t("perform.count", { song: song + 1, songs: songs.length, page: range(page + 1), pages: counts[song], total, current: range(index + 1) })
       : t("viewer.count", { page: range(index + 1), total });
@@ -337,6 +396,12 @@ export function openPerformance(ctx, { title, songs }) {
   function toggleLineup(force) {
     if (!multi) return;
     lineupOpen = force ?? !lineupOpen;
+    if (lineupOpen && autoOpen) {
+      // the two panels share the right side: close the Auto turn panel quietly
+      autoOpen = false;
+      autoPanel.hidden = true;
+      autoButton.setAttribute("aria-expanded", "false");
+    }
     lineupPanel.hidden = !lineupOpen;
     lineupButton.setAttribute("aria-expanded", String(lineupOpen));
     scheduleAuto(); // paused while the Lineup is open
@@ -397,8 +462,8 @@ export function openPerformance(ctx, { title, songs }) {
     const pdfPage = await doc.getPage(page.pdfPage);
     const base = pdfPage.getViewport({ scale: 1 });
     const box = holder.getBoundingClientRect();
-    const slots = twoUp ? 2 : 1;
-    const fit = Math.max(0.1, Math.min((box.width / slots - 16) / base.width, (box.height - 16) / base.height));
+    const { cols, rows } = gridFor(perView);
+    const fit = Math.max(0.1, Math.min((box.width / cols - 16) / base.width, (box.height / rows - 16) / base.height));
     let pixelRatio = Math.min(window.devicePixelRatio || 1, 3);
     const area = base.width * fit * pixelRatio * base.height * fit * pixelRatio;
     if (area > MAX_CANVAS_PIXELS) pixelRatio *= Math.sqrt(MAX_CANVAS_PIXELS / area);
@@ -436,7 +501,7 @@ export function openPerformance(ctx, { title, songs }) {
   }
 
   function evict() {
-    const around = KEEP_AROUND + (twoUp ? 2 : 0);
+    const around = KEEP_AROUND + perView;
     for (const key of rendered.keys()) {
       if (Math.abs(key - index) > around) rendered.delete(key);
     }
@@ -456,12 +521,22 @@ export function openPerformance(ctx, { title, songs }) {
       if (token === showToken) holder.replaceChildren(h("p", { class: "viewer-message", text: t("common.loading") }));
     }, 150);
     try {
-      const span = spreadSize(pageSongs(), index, twoUp);
+      const span = spreadSize(pageSongs(), index, perView);
       const elements = await Promise.all(Array.from({ length: span }, (_, n) => renderPage(index + n)));
       if (token !== showToken || closed) return;
-      holder.replaceChildren(span === 2 ? h("div", { class: "viewer-spread" }, ...elements) : elements[0]);
+      if (perView > 1) {
+        // The same grid for every screen, so a short last screen keeps the same page size.
+        const { cols, rows } = gridFor(perView);
+        const spread = h("div", { class: "viewer-spread" }, ...elements);
+        spread.style.setProperty("--cols", String(cols));
+        spread.style.setProperty("--rows", String(rows));
+        holder.replaceChildren(spread);
+      } else {
+        holder.replaceChildren(elements[0]);
+      }
       pan = { x: 0, y: 0 };
       applyZoom();
+      if (autoOpen) renderAutoRows();
     } catch (error) {
       if (token !== showToken || closed) return;
       holder.replaceChildren(
@@ -473,17 +548,17 @@ export function openPerformance(ctx, { title, songs }) {
     } finally {
       clearTimeout(slow);
     }
-    const after = nextIndex(pageSongs(), index, twoUp);
+    const after = nextIndex(pageSongs(), index, perView);
     preload(after);
-    if (twoUp) preload(after + 1);
-    preload(prevIndex(pageSongs(), index, twoUp));
+    for (let n = 1; n < perView; n += 1) preload(after + n);
+    preload(prevIndex(pageSongs(), index, perView));
     evict();
   }
 
   // step > 0: next page (or next two pages); step < 0: previous.
   async function turn(step) {
     if (!pages.length) return;
-    let target = step > 0 ? nextIndex(pageSongs(), index, twoUp) : prevIndex(pageSongs(), index, twoUp);
+    let target = step > 0 ? nextIndex(pageSongs(), index, perView) : prevIndex(pageSongs(), index, perView);
     if (target < 0) {
       flash(t("viewer.first"));
       return;
@@ -493,7 +568,7 @@ export function openPerformance(ctx, { title, songs }) {
       holder.replaceChildren(h("p", { class: "viewer-message", text: t("common.loading") }));
       await ready[loadedSongs].promise;
       if (closed) return;
-      target = nextIndex(pageSongs(), index, twoUp);
+      target = nextIndex(pageSongs(), index, perView);
     }
     if (target >= pages.length) {
       flash(t("viewer.last"));
@@ -537,27 +612,120 @@ export function openPerformance(ctx, { title, songs }) {
     setZoom(fitWidthZoom(content, { w: box.w - 16, h: box.h }));
   }
 
-  function toggleTwoUp() {
-    twoUp = !twoUp;
-    twoUpButton.setAttribute("aria-pressed", String(twoUp));
-    savePrefs({ twoUp });
-    rendered.clear(); // pages are drawn at half width in the two-page view
+  // Pages on one screen (1 to 4). Pages are drawn smaller for more pages, so they are drawn again.
+  function setPerView(count) {
+    const next = clampPerView(count);
+    if (next === perView) return;
+    perView = next;
+    viewButtons.forEach((button, n) => button.setAttribute("aria-pressed", String(n + 1 === perView)));
+    savePrefs({ perView, autoDefault });
+    rendered.clear();
     show(index);
   }
 
-  // ---- auto page turn: stops at the end of a Score, never jumps to the next one ----
+  // ---- auto page turn: each page has its own seconds (0.1 steps); stops at the end of a Score ----
+  function secondsInput(id, label, value, onChange) {
+    return h("input", {
+      type: "number",
+      id,
+      class: "auto-input num",
+      inputmode: "decimal",
+      step: "0.1",
+      min: String(AUTO_MIN),
+      max: String(AUTO_MAX),
+      value,
+      "aria-label": label,
+      onchange: onChange
+    });
+  }
+
+  function pageSeconds(page) {
+    const own = Number(pageTimes[pageTimeKey(page)]);
+    return Number.isFinite(own) && own > 0 ? own : null;
+  }
+
+  // The screen stays as long as its longest page.
+  function currentViewSeconds() {
+    const span = spreadSize(pageSongs(), index, perView);
+    const times = Array.from({ length: span }, (_, n) => pageSeconds(pages[index + n]));
+    return viewSeconds(times, autoDefault);
+  }
+
+  function readSeconds(input, { allowBlank }) {
+    const { ok, value } = parseSeconds(input.value);
+    const valid = ok && (value !== null || allowBlank);
+    input.setAttribute("aria-invalid", String(!valid));
+    if (!valid) flash(t("perform.autoInvalid", { min: AUTO_MIN, max: AUTO_MAX }), 3000);
+    return valid ? value : undefined;
+  }
+
+  function onDefaultChange() {
+    const value = readSeconds(autoDefaultInput, { allowBlank: false });
+    if (value === undefined) return;
+    autoDefault = value;
+    autoDefaultInput.value = formatSeconds(value);
+    savePrefs({ perView, autoDefault });
+    renderAutoRows();
+    scheduleAuto();
+  }
+
+  function onPageTimeChange(page, input) {
+    const value = readSeconds(input, { allowBlank: true });
+    if (value === undefined) return;
+    if (value === null) delete pageTimes[pageTimeKey(page)];
+    else pageTimes[pageTimeKey(page)] = value;
+    input.value = value === null ? "" : formatSeconds(value);
+    writeJson(TIMES_KEY, pageTimes);
+    scheduleAuto();
+  }
+
+  // One box per page on the screen; blank means "use the default".
+  function renderAutoRows() {
+    const span = spreadSize(pageSongs(), index, perView);
+    const rows = Array.from({ length: span }, (_, n) => {
+      const page = pages[index + n];
+      const own = pageSeconds(page);
+      const id = `auto-page-${n}`;
+      const label = t("perform.autoPage", { page: locatePage(counts, index + n).page + 1 });
+      const input = secondsInput(id, label, own === null ? "" : formatSeconds(own), () => onPageTimeChange(page, input));
+      input.placeholder = formatSeconds(autoDefault);
+      return h("div", { class: "auto-line" }, h("label", { for: id, text: label }), input, h("span", { text: t("perform.secondsUnit") }));
+    });
+    autoRows.replaceChildren(...rows);
+  }
+
+  function toggleAutoPanel(force) {
+    autoOpen = force ?? !autoOpen;
+    if (autoOpen && lineupOpen) toggleLineup(false);
+    autoPanel.hidden = !autoOpen;
+    autoButton.setAttribute("aria-expanded", String(autoOpen));
+    if (autoOpen) {
+      renderAutoRows();
+      autoStart.focus();
+    } else {
+      autoButton.focus();
+    }
+    scheduleAuto();
+  }
+
+  function typingInAutoPanel() {
+    const active = document.activeElement;
+    return autoPanel.contains(active) && active instanceof HTMLInputElement;
+  }
+
   function scheduleAuto() {
     clearTimeout(autoTimer);
-    if (!autoSeconds || closed || lineupOpen || document.hidden) return;
-    autoTimer = setTimeout(autoTick, autoSeconds * 1000);
+    // paused while the Lineup is open, the screen is hidden, or a seconds box is being edited
+    if (!autoOn || closed || lineupOpen || document.hidden || typingInAutoPanel() || !pages.length) return;
+    autoTimer = setTimeout(autoTick, Math.round(currentViewSeconds() * 1000));
   }
 
   function autoTick() {
-    if (closed || !autoSeconds) return;
+    if (closed || !autoOn) return;
     const ids = pageSongs();
-    const target = nextIndex(ids, index, twoUp);
+    const target = nextIndex(ids, index, perView);
     if (target >= pages.length || ids[target] !== ids[index]) {
-      autoSeconds = 0;
+      autoOn = false;
       updateAutoButton();
       flash(t("perform.autoEnded"), 3000);
       return;
@@ -566,16 +734,16 @@ export function openPerformance(ctx, { title, songs }) {
   }
 
   function updateAutoButton() {
-    autoButton.textContent = autoSeconds ? t("perform.autoOn", { seconds: autoSeconds }) : t("perform.autoOff");
-    autoButton.setAttribute("aria-pressed", String(autoSeconds > 0));
+    autoButton.textContent = autoOn ? t("perform.autoButtonOn") : t("perform.autoButton");
+    autoButton.setAttribute("aria-pressed", String(autoOn));
+    autoStart.textContent = autoOn ? t("perform.autoStop") : t("perform.autoStart");
     scheduleAuto();
   }
 
-  function cycleAuto() {
-    autoSeconds = nextAutoSeconds(autoSeconds);
+  function toggleAuto() {
+    autoOn = !autoOn;
     updateAutoButton();
   }
-
   // ---- save on this device ----
   async function refreshOffline() {
     const saved = await countOfflineFiles(allFiles.map((file) => file.storage_path));
@@ -631,6 +799,8 @@ export function openPerformance(ctx, { title, songs }) {
 
   function onKeyDown(event) {
     if (event.altKey || event.ctrlKey || event.metaKey || event.defaultPrevented || lineupOpen) return;
+    // typing seconds in the Auto turn panel must not turn pages
+    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
     const onButton = event.target instanceof HTMLButtonElement;
     let step = 0;
     if (NEXT_KEYS.has(event.key)) step = 1;
@@ -652,7 +822,7 @@ export function openPerformance(ctx, { title, songs }) {
   }
 
   function onPointerDown(event) {
-    if (event.target.closest("button, .viewer-lineup")) return;
+    if (event.target.closest("button, .viewer-lineup, .viewer-auto")) return;
     touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
     moved = false;
     if (touches.size === 2) {
@@ -759,10 +929,18 @@ export function openPerformance(ctx, { title, songs }) {
   document.addEventListener("visibilitychange", onVisibility);
   // Esc closes the Lineup first; the viewer closes on the next Esc.
   dialog.addEventListener("cancel", (event) => {
+    if (autoOpen) {
+      event.preventDefault();
+      toggleAutoPanel(false);
+      return;
+    }
     if (!lineupOpen) return;
     event.preventDefault();
     toggleLineup(false);
   });
+  // The timer waits while a seconds box is being edited and starts again when it is left.
+  autoPanel.addEventListener("focusin", scheduleAuto);
+  autoPanel.addEventListener("focusout", () => setTimeout(scheduleAuto, 0));
   dialog.addEventListener("close", () => {
     closed = true;
     releaseWake();

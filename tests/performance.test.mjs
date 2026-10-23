@@ -101,7 +101,23 @@ test("songs that are still loading are not counted yet", () => {
   assert.deepEqual(locatePage([], 0), { song: 0, page: 0 });
 });
 
-import { AUTO_SECONDS, ZOOM_MAX, clampPan, clampZoom, fitWidthZoom, nextAutoSeconds, nextIndex, prevIndex, spreadSize } from "../js/performance.js";
+import {
+  AUTO_MAX,
+  AUTO_MIN,
+  ZOOM_MAX,
+  clampPan,
+  clampPerView,
+  clampZoom,
+  fitWidthZoom,
+  formatSeconds,
+  gridFor,
+  nextIndex,
+  pageTimeKey,
+  parseSeconds,
+  prevIndex,
+  spreadSize,
+  viewSeconds
+} from "../js/performance.js";
 
 test("zoom stays between fit page and the maximum", () => {
   assert.equal(clampZoom(0.2), 1);
@@ -124,34 +140,66 @@ test("fit width zooms a narrow page up to the screen width", () => {
   assert.equal(fitWidthZoom({ w: 0, h: 0 }, { w: 800, h: 600 }), 1);
 });
 
-test("auto turn cycles through its steps and back to off", () => {
-  let current = 0;
-  const seen = [];
-  for (let n = 0; n < AUTO_SECONDS.length; n += 1) {
-    current = nextAutoSeconds(current);
-    seen.push(current);
-  }
-  assert.deepEqual(seen, [10, 20, 30, 60, 0]);
+test("pages on screen are limited to 1-4 and laid out as a grid", () => {
+  assert.equal(clampPerView(0), 1);
+  assert.equal(clampPerView(3), 3);
+  assert.equal(clampPerView(9), 4);
+  assert.equal(clampPerView("x"), 1);
+  assert.deepEqual(gridFor(1), { cols: 1, rows: 1 });
+  assert.deepEqual(gridFor(2), { cols: 2, rows: 1 });
+  assert.deepEqual(gridFor(3), { cols: 3, rows: 1 });
+  assert.deepEqual(gridFor(4), { cols: 2, rows: 2 });
 });
 
-test("a two-page view never mixes two Scores", () => {
-  const ids = [0, 0, 0, 1, 1];
-  assert.equal(spreadSize(ids, 0, false), 1);
-  assert.equal(spreadSize(ids, 0, true), 2);
-  assert.equal(spreadSize(ids, 2, true), 1);
-  assert.equal(spreadSize(ids, 3, true), 2);
-  assert.equal(spreadSize(ids, 4, true), 1);
+test("one screen never mixes two Scores", () => {
+  const ids = [0, 0, 0, 1, 1, 1, 1, 1];
+  assert.equal(spreadSize(ids, 0, 1), 1);
+  assert.equal(spreadSize(ids, 0, 2), 2);
+  assert.equal(spreadSize(ids, 0, 4), 3); // Score 0 has only 3 pages
+  assert.equal(spreadSize(ids, 2, 2), 1);
+  assert.equal(spreadSize(ids, 3, 4), 4);
+  assert.equal(spreadSize(ids, 7, 4), 1); // end of the list
 });
 
-test("next and previous follow the two-page view", () => {
-  const ids = [0, 0, 0, 1, 1];
-  assert.equal(nextIndex(ids, 0, true), 2);
-  assert.equal(nextIndex(ids, 2, true), 3);
-  assert.equal(nextIndex(ids, 3, true), 5);
-  assert.equal(nextIndex(ids, 0, false), 1);
-  assert.equal(prevIndex(ids, 0, true), -1);
-  assert.equal(prevIndex(ids, 2, true), 0);
-  assert.equal(prevIndex(ids, 3, true), 1); // back into Score 0's last spread (pages 2-3)
-  assert.equal(prevIndex(ids, 4, true), 3);
-  assert.equal(prevIndex(ids, 4, false), 3);
+test("next and previous follow the pages on screen", () => {
+  const ids = [0, 0, 0, 1, 1, 1, 1, 1];
+  assert.equal(nextIndex(ids, 0, 1), 1);
+  assert.equal(nextIndex(ids, 0, 2), 2);
+  assert.equal(nextIndex(ids, 0, 4), 3);
+  assert.equal(nextIndex(ids, 3, 4), 7);
+  assert.equal(nextIndex(ids, 7, 4), 8);
+  assert.equal(prevIndex(ids, 0, 4), -1);
+  assert.equal(prevIndex(ids, 3, 4), 0); // all 3 pages of Score 0
+  assert.equal(prevIndex(ids, 3, 2), 1);
+  assert.equal(prevIndex(ids, 7, 4), 3);
+  assert.equal(prevIndex(ids, 7, 1), 6);
+});
+
+test("seconds are typed with up to one decimal and kept within limits", () => {
+  assert.deepEqual(parseSeconds("12.5"), { ok: true, value: 12.5 });
+  assert.deepEqual(parseSeconds("12,5"), { ok: true, value: 12.5 });
+  assert.deepEqual(parseSeconds("7.26"), { ok: true, value: 7.3 });
+  assert.deepEqual(parseSeconds(" 0.1 "), { ok: true, value: 0.1 });
+  assert.deepEqual(parseSeconds("0.04"), { ok: true, value: AUTO_MIN });
+  assert.deepEqual(parseSeconds("9999"), { ok: true, value: AUTO_MAX });
+  assert.deepEqual(parseSeconds(""), { ok: true, value: null });
+  assert.equal(parseSeconds("0").ok, false);
+  assert.equal(parseSeconds("-3").ok, false);
+  assert.equal(parseSeconds("abc").ok, false);
+  assert.equal(formatSeconds(12), "12");
+  assert.equal(formatSeconds(12.5), "12.5");
+  assert.equal(formatSeconds(0.1 + 0.2), "0.3");
+});
+
+test("a screen stays as long as its longest page; blank pages use the default", () => {
+  assert.equal(viewSeconds([null], 10), 10);
+  assert.equal(viewSeconds([5, null], 10), 10);
+  assert.equal(viewSeconds([5, 20.5], 10), 20.5);
+  assert.equal(viewSeconds([2.5], 10), 2.5);
+  assert.equal(viewSeconds([], 8), 8);
+});
+
+test("page times are kept per file page", () => {
+  assert.equal(pageTimeKey({ file: { id: "f1" }, pdfPage: 3 }), "f1:3");
+  assert.equal(pageTimeKey({ file: { id: "f2" } }), "f2:0");
 });

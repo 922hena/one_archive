@@ -61,13 +61,11 @@ export function locatePage(counts, index) {
   return { song: 0, page: 0 };
 }
 
-// ---- zoom, two-page view and auto page turn ----
+// ---- zoom, several pages on screen and auto page turn ----
 
 export const ZOOM_MIN = 1;
 export const ZOOM_MAX = 4;
 export const ZOOM_STEP = 0.25;
-// Seconds per page for auto page turn. 0 = off.
-export const AUTO_SECONDS = [0, 10, 20, 30, 60];
 
 export function clampZoom(zoom) {
   if (!Number.isFinite(zoom)) return ZOOM_MIN;
@@ -91,25 +89,73 @@ export function fitWidthZoom(content, box) {
   return clampZoom(box.w / content.w);
 }
 
-export function nextAutoSeconds(current) {
-  const at = AUTO_SECONDS.indexOf(current);
-  return AUTO_SECONDS[(at + 1) % AUTO_SECONDS.length];
+// ---- several pages on one screen (1 to 4) ----
+
+export const MAX_PER_VIEW = 4;
+
+export function clampPerView(count) {
+  const n = Math.round(Number(count));
+  return Number.isFinite(n) ? Math.min(MAX_PER_VIEW, Math.max(1, n)) : 1;
 }
 
-// songIds[i] = song of global page i. A two-page view never mixes two songs.
-export function spreadSize(songIds, index, twoUp) {
-  return twoUp && index + 1 < songIds.length && songIds[index + 1] === songIds[index] ? 2 : 1;
+// Grid for that many pages on one screen: 1, 2 or 3 side by side; 4 as 2 x 2.
+export function gridFor(perView) {
+  const n = clampPerView(perView);
+  return n >= 4 ? { cols: 2, rows: 2 } : { cols: n, rows: 1 };
 }
 
-// First page of the next view (equals songIds.length when there is none).
-export function nextIndex(songIds, index, twoUp) {
-  return index + spreadSize(songIds, index, twoUp);
+// songIds[i] = song of global page i. One screen never mixes two songs.
+// How many pages the screen starting at `index` shows (at most perView).
+export function spreadSize(songIds, index, perView) {
+  const limit = clampPerView(perView);
+  let size = 1;
+  while (size < limit && index + size < songIds.length && songIds[index + size] === songIds[index]) size += 1;
+  return size;
 }
 
-// First page of the previous view, or -1 at the very start.
-export function prevIndex(songIds, index, twoUp) {
+// First page of the next screen (equals songIds.length when there is none).
+export function nextIndex(songIds, index, perView) {
+  return index + spreadSize(songIds, index, perView);
+}
+
+// First page of the previous screen, or -1 at the very start.
+export function prevIndex(songIds, index, perView) {
   if (index <= 0) return -1;
-  if (twoUp && index >= 2 && songIds[index - 2] === songIds[index - 1]) return index - 2;
-  return index - 1;
+  const limit = clampPerView(perView);
+  let run = 1;
+  while (run < limit && index - run - 1 >= 0 && songIds[index - run - 1] === songIds[index - 1]) run += 1;
+  return index - run;
 }
 
+// ---- auto page turn: seconds per page, in steps of 0.1 ----
+
+export const AUTO_MIN = 0.1;
+export const AUTO_MAX = 600;
+export const AUTO_DEFAULT = 10;
+
+// Text typed in a seconds box -> { ok, value }. Blank is allowed (value null = "use the default").
+export function parseSeconds(text) {
+  const raw = String(text ?? "").trim().replace(",", ".");
+  if (!raw) return { ok: true, value: null };
+  const number = Number(raw);
+  if (!Number.isFinite(number) || number <= 0) return { ok: false, value: null };
+  const tenths = Math.round(number * 10) / 10;
+  return { ok: true, value: Math.min(AUTO_MAX, Math.max(AUTO_MIN, tenths)) };
+}
+
+// 12 -> "12", 12.5 -> "12.5"
+export function formatSeconds(seconds) {
+  return String(Math.round(seconds * 10) / 10);
+}
+
+// A screen stays as long as its longest page. times[i] = that page's own seconds, or null for the default.
+export function viewSeconds(times, fallback) {
+  let longest = 0;
+  for (const time of times) longest = Math.max(longest, time ?? fallback);
+  return longest || fallback;
+}
+
+// Page times are remembered per file page: { "<file id>:<pdf page or 0>": seconds }.
+export function pageTimeKey(page) {
+  return `${page.file.id}:${page.pdfPage ?? 0}`;
+}
