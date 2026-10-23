@@ -27,6 +27,8 @@ import {
   viewSeconds
 } from "../performance.js";
 import { countOfflineFiles, getOfflineFile, removeOfflineFiles, requestPersistence, saveOfflineFile } from "../offline-files.js";
+import { notesKey } from "../annotations.js";
+import { createNotesLayer } from "./notes-layer.js";
 
 // Legacy build: also runs on older iPad Safari.
 const PDFJS_BASE = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/legacy/build/";
@@ -71,7 +73,8 @@ function loadPrefs() {
     // older versions saved only "two pages on/off"
     perView: clampPerView(saved.perView ?? (saved.twoUp === true ? 2 : 1)),
     autoDefault: fallback.ok && fallback.value ? fallback.value : AUTO_DEFAULT,
-    locked: saved.locked === true
+    locked: saved.locked === true,
+    vertical: saved.vertical === true // two or three pages stacked top to bottom
   };
 }
 
@@ -169,6 +172,8 @@ export function openPerformance(ctx, { title, songs }) {
 
   const prefs = loadPrefs();
   let perView = prefs.perView; // pages on one screen, 1 to 4
+  let vertical = prefs.vertical;
+  let shownIndex = 0; // first page of what is really on screen (index moves before the new pages are ready)
   let zoom = 1;
   let pan = { x: 0, y: 0 };
   let locked = prefs.locked; // view settings can't be changed by accident while performing
@@ -226,9 +231,17 @@ export function openPerformance(ctx, { title, songs }) {
       onclick: () => setPerView(n + 1)
     }, String(n + 1))
   );
+  const stackButton = h("button", {
+    type: "button",
+    class: "viewer-tool",
+    title: t("perform.stackHint"),
+    "aria-pressed": String(vertical),
+    onclick: () => setVertical(!vertical)
+  }, t("perform.stack"));
   const viewGroup = h("div", { class: "viewer-view", role: "group", "aria-label": t("perform.pagesOnScreen") },
     h("span", { class: "viewer-label", text: t("perform.pagesOnScreen") }),
-    ...viewButtons
+    ...viewButtons,
+    stackButton
   );
   const autoButton = h("button", { type: "button", class: "viewer-tool", "aria-pressed": "false", "aria-expanded": "false", onclick: () => toggleAutoPanel() }, t("perform.autoButton"));
   const autoStart = h("button", { type: "button", class: "viewer-tool is-primary", onclick: toggleAuto }, t("perform.autoStart"));
@@ -279,11 +292,21 @@ export function openPerformance(ctx, { title, songs }) {
     )
   );
   const stage = h("div", { class: "viewer-stage" }, holder, prevButton, nextButton, notice, lineupPanel, autoPanel, displayPanel);
+  // Handwritten notes: a canvas over the pages plus its tool bar (see notes-layer.js).
+  const notes = createNotesLayer({
+    visiblePages,
+    flash,
+    onMode: (on) => {
+      dialog.classList.toggle("notes-on", on);
+      if (on) closeSidePanels();
+    }
+  });
+  stage.append(notes.canvas, notes.bar);
   const displayButton = h("button", { type: "button", class: "viewer-tool", "aria-expanded": "false", onclick: () => toggleDisplayPanel() }, t("perform.displayButton"));
   const lockButton = h("button", { type: "button", class: "viewer-tool", "aria-pressed": String(locked), onclick: toggleLock }, t(locked ? "perform.locked" : "perform.lock"));
   const offlineButton = h("button", { type: "button", class: "viewer-tool", "aria-pressed": "false", onclick: toggleOffline }, t("perform.offlineSave"));
   const tools = h("div", { class: "viewer-tools", role: "group", "aria-label": t("perform.viewTools") },
-    zoomOutButton, zoomLabel, zoomInButton, fitWidthButton, viewGroup, autoButton, displayButton, lockButton, offlineButton
+    zoomOutButton, zoomLabel, zoomInButton, fitWidthButton, viewGroup, autoButton, displayButton, ...notes.buttons, lockButton, offlineButton
   );
   const dialog = h(
     "dialog",
@@ -301,6 +324,30 @@ export function openPerformance(ctx, { title, songs }) {
     tools,
     stage
   );
+
+  function persistPrefs() {
+    savePrefs({ perView, autoDefault, locked, vertical });
+  }
+
+  function showLoading() {
+    holder.replaceChildren(h("p", { class: "viewer-message", text: t("common.loading") }));
+    notes.redraw();
+  }
+
+  // The score pages on screen right now, each with its notes key and page number.
+  function visiblePages() {
+    const root = holder.firstElementChild;
+    if (!root || !pages.length) return [];
+    const elements = root.classList.contains("viewer-spread") ? [...root.children] : [root];
+    const result = [];
+    elements.forEach((el, n) => {
+      const page = pages[shownIndex + n];
+      if (page && !page.failed && el.classList.contains("viewer-page")) {
+        result.push({ key: notesKey(page), el, label: locatePage(counts, shownIndex + n).page + 1 });
+      }
+    });
+    return result;
+  }
 
   function flash(message, ms = 1600) {
     notice.textContent = message;
@@ -516,7 +563,7 @@ export function openPerformance(ctx, { title, songs }) {
     const pdfPage = await doc.getPage(page.pdfPage);
     const base = pdfPage.getViewport({ scale: 1 });
     const box = holder.getBoundingClientRect();
-    const { cols, rows } = gridFor(perView);
+    const { cols, rows } = gridFor(perView, vertical);
     const fit = Math.max(0.1, Math.min((box.width / cols - 16) / base.width, (box.height / rows - 16) / base.height));
     let pixelRatio = Math.min(window.devicePixelRatio || 1, 3);
     const area = base.width * fit * pixelRatio * base.height * fit * pixelRatio;
@@ -572,7 +619,7 @@ export function openPerformance(ctx, { title, songs }) {
     scheduleAuto();
     if (lineupOpen) renderLineup();
     const slow = setTimeout(() => {
-      if (token === showToken) holder.replaceChildren(h("p", { class: "viewer-message", text: t("common.loading") }));
+      if (token === showToken) showLoading();
     }, 150);
     try {
       const span = spreadSize(pageSongs(), index, perView);
@@ -580,7 +627,7 @@ export function openPerformance(ctx, { title, songs }) {
       if (token !== showToken || closed) return;
       if (perView > 1) {
         // The same grid for every screen, so a short last screen keeps the same page size.
-        const { cols, rows } = gridFor(perView);
+        const { cols, rows } = gridFor(perView, vertical);
         const spread = h("div", { class: "viewer-spread" }, ...elements);
         spread.style.setProperty("--cols", String(cols));
         spread.style.setProperty("--rows", String(rows));
@@ -588,8 +635,10 @@ export function openPerformance(ctx, { title, songs }) {
       } else {
         holder.replaceChildren(elements[0]);
       }
+      shownIndex = at;
       pan = { x: 0, y: 0 };
       applyZoom();
+      notes.refresh(); // the saved notes of these pages
       if (autoOpen) renderAutoRows();
     } catch (error) {
       if (token !== showToken || closed) return;
@@ -619,7 +668,7 @@ export function openPerformance(ctx, { title, songs }) {
     }
     // The next song may still be loading in the background: wait for it instead of stopping.
     if (target >= pages.length && loadedSongs < songs.length) {
-      holder.replaceChildren(h("p", { class: "viewer-message", text: t("common.loading") }));
+      showLoading();
       await ready[loadedSongs].promise;
       if (closed) return;
       target = nextIndex(pageSongs(), index, perView);
@@ -645,6 +694,7 @@ export function openPerformance(ctx, { title, songs }) {
 
   function applyZoom() {
     const el = pageElement();
+    notes.redraw(); // notes follow the page while it is zoomed or moved
     zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
     zoomOutButton.disabled = locked || zoom <= 1;
     zoomInButton.disabled = locked || zoom >= ZOOM_MAX;
@@ -675,21 +725,37 @@ export function openPerformance(ctx, { title, songs }) {
     if (next === perView) return;
     perView = next;
     viewButtons.forEach((button, n) => button.setAttribute("aria-pressed", String(n + 1 === perView)));
-    savePrefs({ perView, autoDefault, locked });
+    persistPrefs();
+    updateStackButton();
     rendered.clear();
     show(index);
+  }
+
+  // Two or three pages one above the other (Double Vertical). Four pages are always 2 x 2.
+  function setVertical(next) {
+    if (locked) return;
+    vertical = next;
+    persistPrefs();
+    updateStackButton();
+    if (perView > 1 && perView < 4) {
+      rendered.clear();
+      show(index);
+    }
+  }
+
+  function updateStackButton() {
+    stackButton.setAttribute("aria-pressed", String(vertical));
+    stackButton.disabled = locked || perView === 1 || perView >= MAX_PER_VIEW;
   }
 
   // ---- auto page turn: each page has its own seconds (0.1 steps); stops at the end of a Score ----
   function secondsInput(id, label, value, onChange) {
     return h("input", {
-      type: "number",
+      type: "text", // also accepts minutes:seconds such as 1:30
       id,
       class: "auto-input num",
       inputmode: "decimal",
-      step: "0.1",
-      min: String(AUTO_MIN),
-      max: String(AUTO_MAX),
+      autocomplete: "off",
       value,
       "aria-label": label,
       onchange: onChange
@@ -721,7 +787,7 @@ export function openPerformance(ctx, { title, songs }) {
     if (value === undefined) return;
     autoDefault = value;
     autoDefaultInput.value = formatSeconds(value);
-    savePrefs({ perView, autoDefault, locked });
+    persistPrefs();
     renderAutoRows();
     scheduleAuto();
   }
@@ -880,12 +946,13 @@ export function openPerformance(ctx, { title, songs }) {
     lockButton.textContent = t(locked ? "perform.locked" : "perform.lock");
     dialog.classList.toggle("is-locked", locked);
     for (const button of [zoomOutButton, zoomLabel, zoomInButton, fitWidthButton, ...viewButtons]) button.disabled = locked;
+    updateStackButton();
     if (!locked) applyZoom(); // restores the zoom-out / zoom-in limits
   }
 
   function toggleLock() {
     locked = !locked;
-    savePrefs({ perView, autoDefault, locked });
+    persistPrefs();
     applyLock();
   }
   // ---- save on this device ----
@@ -934,7 +1001,7 @@ export function openPerformance(ctx, { title, songs }) {
       return;
     }
     if (songStart(target) === undefined) {
-      holder.replaceChildren(h("p", { class: "viewer-message", text: t("common.loading") }));
+      showLoading();
       await ready[target].promise;
       if (closed) return;
     }
@@ -942,6 +1009,8 @@ export function openPerformance(ctx, { title, songs }) {
   }
 
   function onKeyDown(event) {
+    // Ctrl/Cmd + Z and Y undo and redo notes (not while typing in a box)
+    if (!(event.target instanceof HTMLInputElement) && !(event.target instanceof HTMLTextAreaElement) && notes.handleKey(event)) return;
     if (event.altKey || event.ctrlKey || event.metaKey || event.defaultPrevented || lineupOpen) return;
     // typing seconds in the Auto turn panel must not turn pages
     if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
@@ -966,16 +1035,18 @@ export function openPerformance(ctx, { title, songs }) {
   }
 
   function onPointerDown(event) {
-    if (event.target.closest("button, .viewer-lineup, .viewer-auto")) return;
+    if (event.target.closest("button, .viewer-lineup, .viewer-auto, .viewer-notes")) return;
     touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
     moved = false;
     if (touches.size === 2 && !locked) {
-      // two fingers: pinch to zoom
+      // two fingers: pinch to zoom (and move the page while pinching)
       const [a, b] = [...touches.values()];
-      gesture = { kind: "pinch", dist: Math.hypot(a.x - b.x, a.y - b.y), zoom };
+      gesture = { kind: "pinch", dist: Math.hypot(a.x - b.x, a.y - b.y), zoom, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
       pointer = null;
       return;
     }
+    // a pen stroke or eraser swipe: it must not also turn the page
+    if (notes.isClaimed(event.pointerId)) return;
     pointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
   }
 
@@ -989,6 +1060,9 @@ export function openPerformance(ctx, { title, songs }) {
       const [a, b] = [...touches.values()];
       if (gesture.dist > 0) {
         zoom = clampZoom((gesture.zoom * Math.hypot(a.x - b.x, a.y - b.y)) / gesture.dist);
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        if (gesture.mid) pan = { x: pan.x + mid.x - gesture.mid.x, y: pan.y + mid.y - gesture.mid.y };
+        gesture.mid = mid;
         applyZoom();
       }
       moved = true;
@@ -1075,6 +1149,11 @@ export function openPerformance(ctx, { title, songs }) {
   document.addEventListener("visibilitychange", onVisibility);
   // Esc closes the Lineup first; the viewer closes on the next Esc.
   dialog.addEventListener("cancel", (event) => {
+    if (notes.mode) {
+      event.preventDefault();
+      notes.setMode(false);
+      return;
+    }
     if (displayOpen) {
       event.preventDefault();
       toggleDisplayPanel(false);
@@ -1098,6 +1177,7 @@ export function openPerformance(ctx, { title, songs }) {
     clearTimeout(noticeTimer);
     clearTimeout(resizeTimer);
     clearTimeout(autoTimer);
+    notes.destroy(); // saves any notes not yet stored
     document.removeEventListener("visibilitychange", onVisibility);
     document.removeEventListener("keydown", onKeyDown);
     window.removeEventListener("resize", onResize);

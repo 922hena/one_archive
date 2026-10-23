@@ -154,6 +154,23 @@ test("pages on screen are limited to 1-4 and laid out as a grid", () => {
   assert.deepEqual(gridFor(4), { cols: 2, rows: 2 });
 });
 
+test("stacked pages go top to bottom; four pages stay 2 x 2", () => {
+  assert.deepEqual(gridFor(1, true), { cols: 1, rows: 1 });
+  assert.deepEqual(gridFor(2, true), { cols: 1, rows: 2 });
+  assert.deepEqual(gridFor(3, true), { cols: 1, rows: 3 });
+  assert.deepEqual(gridFor(4, true), { cols: 2, rows: 2 });
+});
+
+test("seconds can also be typed as minutes:seconds", () => {
+  assert.deepEqual(parseSeconds("1:30"), { ok: true, value: 90 });
+  assert.deepEqual(parseSeconds("0:07.5"), { ok: true, value: 7.5 });
+  assert.deepEqual(parseSeconds("2:05"), { ok: true, value: 125 });
+  assert.equal(parseSeconds("1:75").ok, false);
+  assert.equal(parseSeconds("1:").ok, false);
+  assert.equal(parseSeconds(":30").ok, false);
+  assert.equal(parseSeconds("1:2:3").ok, false);
+});
+
 test("one screen never mixes two Scores", () => {
   const ids = [0, 0, 0, 1, 1, 1, 1, 1];
   assert.equal(spreadSize(ids, 0, 1), 1);

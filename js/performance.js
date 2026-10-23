@@ -99,9 +99,11 @@ export function clampPerView(count) {
 }
 
 // Grid for that many pages on one screen: 1, 2 or 3 side by side; 4 as 2 x 2.
-export function gridFor(perView) {
+// vertical = pages stacked top to bottom (Double Vertical); four pages are always 2 x 2.
+export function gridFor(perView, vertical = false) {
   const n = clampPerView(perView);
-  return n >= 4 ? { cols: 2, rows: 2 } : { cols: n, rows: 1 };
+  if (n >= 4) return { cols: 2, rows: 2 };
+  return vertical ? { cols: 1, rows: n } : { cols: n, rows: 1 };
 }
 
 // songIds[i] = song of global page i. One screen never mixes two songs.
@@ -137,7 +139,14 @@ export const AUTO_DEFAULT = 10;
 export function parseSeconds(text) {
   const raw = String(text ?? "").trim().replace(",", ".");
   if (!raw) return { ok: true, value: null };
-  const number = Number(raw);
+  let number;
+  if (raw.includes(":")) {
+    // minutes:seconds, e.g. 1:30 or 1:30.5
+    const match = /^(\d{1,3}):(\d{1,2}(?:\.\d+)?)$/.exec(raw);
+    number = match && Number(match[2]) < 60 ? Number(match[1]) * 60 + Number(match[2]) : Number.NaN;
+  } else {
+    number = Number(raw);
+  }
   if (!Number.isFinite(number) || number <= 0) return { ok: false, value: null };
   const tenths = Math.round(number * 10) / 10;
   return { ok: true, value: Math.min(AUTO_MAX, Math.max(AUTO_MIN, tenths)) };
