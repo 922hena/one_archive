@@ -16,6 +16,45 @@ const viewRoot = document.querySelector("#view");
 let routeToken = 0;
 let lastHash = null;
 
+// Each screen in the browser history gets an id, so going Back can bring back where it was
+// (scroll position and, for Search, how many results were loaded). Kept for this tab only.
+const ENTRY_KEY = "yearscoreEntry";
+const MEMORY_KEY = "yearscore-screens";
+const MEMORY_LIMIT = 60;
+const memory = readMemory(); // entry id -> { scrollY, extra }
+let currentEntry = null;
+
+function readMemory() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(MEMORY_KEY) ?? "[]");
+    return new Map(Array.isArray(saved) ? saved : []);
+  } catch {
+    return new Map();
+  }
+}
+
+function saveMemory() {
+  try {
+    sessionStorage.setItem(MEMORY_KEY, JSON.stringify([...memory].slice(-MEMORY_LIMIT)));
+  } catch {
+    // private mode etc.: Back still works, only the position is not kept after a reload
+  }
+}
+
+// The id of the history entry on screen. A brand-new entry (a link was followed) has none yet.
+function entryFor() {
+  const existing = history.state?.[ENTRY_KEY] ?? null;
+  if (existing) return { id: existing, isNew: false };
+  const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  history.replaceState({ ...(history.state ?? {}), [ENTRY_KEY]: id }, "");
+  return { id, isNew: true };
+}
+
+function remember(id) {
+  if (!memory.has(id)) memory.set(id, { scrollY: 0, extra: {} });
+  return memory.get(id);
+}
+
 function parseRoute(hash) {
   const [path, query = ""] = hash.replace(/^#\/?/, "").split("?");
   const [name, param] = path.split("/");
@@ -30,8 +69,16 @@ function parseRoute(hash) {
 async function route(ctx) {
   const token = ++routeToken;
   const hash = window.location.hash;
-  const keepScroll = hash === lastHash ? window.scrollY : 0;
+  const sameScreen = hash === lastHash; // ctx.refresh() after a save: stay where the page was
   lastHash = hash;
+  const entry = entryFor();
+  // Back / Forward (or a reload) returns to a known entry: bring back its place. A new screen starts at the top.
+  const saved = entry.isNew ? null : memory.get(entry.id) ?? null;
+  const keepScroll = sameScreen ? window.scrollY : saved?.scrollY ?? 0;
+  ctx.restored = sameScreen || saved ? { ...(saved?.extra ?? {}) } : null;
+  ctx.remember = (key, value) => {
+    remember(entry.id).extra[key] = value;
+  };
   const { nav, render, params } = parseRoute(hash);
   document.querySelectorAll("[data-nav]").forEach((link) => {
     link.toggleAttribute("aria-current", link.dataset.nav === nav);
@@ -51,7 +98,13 @@ async function route(ctx) {
   if (token !== routeToken) return;
   viewRoot.replaceChildren(next);
   viewRoot.removeAttribute("aria-busy");
+  currentEntry = entry.id;
+  remember(entry.id).scrollY = keepScroll;
   window.scrollTo(0, keepScroll);
+}
+
+function onScroll() {
+  if (currentEntry) remember(currentEntry).scrollY = window.scrollY;
 }
 
 async function boot() {
@@ -91,7 +144,14 @@ async function boot() {
       route(ctx);
     }
   };
-  window.addEventListener("hashchange", () => route(ctx));
+  // The app puts screens back itself (after the data has loaded), not the browser.
+  if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("pagehide", saveMemory);
+  window.addEventListener("hashchange", () => {
+    saveMemory();
+    route(ctx);
+  });
   route(ctx);
 }
 

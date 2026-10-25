@@ -256,9 +256,9 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .viewer-nav.is-next { right: 8px; }
 .viewer-nav:disabled { opacity: 0.12; }
 .viewer-notice { position: absolute; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); transform: translateX(-50%); margin: 0; padding: 7px 12px; border-radius: var(--radius); background: rgba(0, 0, 0, 0.78); color: #fff; font-size: 0.86rem; max-width: calc(100% - 32px); text-align: center; }
-.viewer.is-immersive .viewer-bar, .viewer.is-immersive .viewer-nav { display: none; }
+.viewer.tools-hidden .viewer-bar { display: none; }
 /* arrows: shown by the Display panel setting (on for mouse and keyboard by default, off for touch) */
-.viewer.show-arrows:not(.is-immersive) .viewer-nav { display: block; }
+.viewer.show-arrows .viewer-nav { display: block; }
 .viewer-holder { transition: filter 0.15s; }
 .display-check { width: 24px; height: 24px; accent-color: #fff; }
 .display-range { flex: 1; min-width: 0; accent-color: #fff; }
@@ -274,7 +274,6 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .viewer-notes.is-top { top: 8px; bottom: auto; }
 .viewer.notes-on .viewer-notice { bottom: 120px; }
 .viewer-notes[hidden] { display: none; }
-.viewer.is-immersive .viewer-notes { display: none; }
 .notes-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; }
 .notes-sep { width: 1px; height: 24px; background: rgba(255, 255, 255, 0.22); }
 .notes-swatch { width: 36px; height: 36px; padding: 0; border: 2px solid rgba(255, 255, 255, 0.35); border-radius: 50%; background: var(--swatch); cursor: pointer; }
@@ -285,7 +284,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 /* Performance Mode: several Scores in one viewer */
 .viewer-bar { flex-wrap: wrap; }
-.viewer.is-immersive .viewer-lineup, .viewer.is-immersive .viewer-tools { display: none; }
+.viewer.tools-hidden .viewer-tools { display: none; }
 .viewer-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 12px; background: #111211; border-top: 1px solid rgba(255, 255, 255, 0.12); flex: none; }
 .viewer-tools .viewer-tool { min-height: 36px; }
 .viewer-tool[aria-pressed="true"] { background: #fff; color: #0B0B0D; border-color: #fff; }
@@ -300,7 +299,6 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .viewer-tool.is-primary { background: #fff; color: #0B0B0D; border-color: #fff; }
 .viewer-auto { position: absolute; top: 0; right: 0; width: min(340px, 100%); max-height: 100%; overflow-y: auto; display: flex; flex-direction: column; background: #111211; border-left: 1px solid rgba(255, 255, 255, 0.18); border-bottom: 1px solid rgba(255, 255, 255, 0.18); z-index: 3; }
 .viewer-auto[hidden] { display: none; }
-.viewer.is-immersive .viewer-auto { display: none; }
 .auto-body { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
 .auto-line { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
 .auto-line label { flex: 1; min-width: 0; }
@@ -332,6 +330,37 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .viewer-lineup :focus-visible, .viewer-bar :focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .section-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .choose-row { width: 100%; min-height: 48px; border: 0; background: none; text-align: left; font: inherit; cursor: pointer; }
+
+/* Performance Mode: a bright, clean score as large as possible. Tools sit behind one small menu button;
+   layout tools only appear in Edit. Works the same without the Fullscreen API (the dialog fills the window). */
+.viewer-stage { background: #F4F4F5; }
+.viewer .viewer-page { box-shadow: 0 0 0 1px rgba(11, 11, 13, 0.08); }
+.viewer-stage .viewer-message { color: var(--oa-text); }
+.viewer-stage .viewer-message .viewer-tool { border-color: var(--line-strong); color: var(--oa-text); }
+.viewer.tools-hidden .viewer-holder { padding: 4px; }
+.viewer-edit-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.viewer:not(.is-editing) .viewer-edit-tools { display: none; }
+.perform-float { position: absolute; z-index: 4; display: flex; align-items: center; gap: 6px; }
+.perform-float[data-corner="top-right"] { top: 8px; right: 8px; }
+.perform-float[data-corner="top-left"] { top: 8px; left: 8px; }
+.perform-float[data-corner="bottom-right"] { bottom: 8px; right: 8px; }
+.perform-float[data-corner="bottom-left"] { bottom: 8px; left: 8px; }
+.perform-float[data-corner$="left"] .perform-menu { order: -1; }
+.viewer-stage:has(.perform-float[data-corner^="bottom"]) .viewer-notice { bottom: max(64px, env(safe-area-inset-bottom)); }
+.perform-menu, .perform-quick {
+  min-width: 44px; height: 44px; padding: 0 10px; border: 0; border-radius: var(--radius); background: rgba(17, 18, 17, 0.5); color: #fff;
+  font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; opacity: 0.6; transition: opacity 120ms, background-color 120ms;
+}
+.perform-menu { display: inline-grid; place-items: center; width: 44px; padding: 0; }
+.perform-menu svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.perform-menu:hover, .perform-quick:hover, .perform-menu:focus-visible, .perform-quick:focus-visible { opacity: 1; }
+.perform-menu[aria-expanded="true"] { opacity: 1; background: #fff; color: #0B0B0D; box-shadow: 0 0 0 1px rgba(11, 11, 13, 0.2); }
+.perform-quick:disabled { opacity: 0.25; cursor: default; }
+.perform-quick[hidden] { display: none; }
+.perform-float :focus-visible { outline: 2px solid #0B0B0D; outline-offset: 2px; }
+.display-quick { border-top: 1px solid rgba(255, 255, 255, 0.18); }
+.display-sub { font-size: 0.9rem; }
+.corner-buttons .viewer-tool { min-width: 44px; font-size: 1rem; }
 
 /* burst camera */
 .camera { width: 100vw; height: 100vh; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: #000; color: #fff; overflow: hidden; }
@@ -544,6 +573,21 @@ p.today-masses { margin-top: 4px; }
 .quick-icon { display: inline-flex; }
 .quick-title { display: block; font-size: 17px; line-height: 24px; font-weight: 600; color: var(--oa-black); }
 .quick-hint { display: block; font-size: 12px; line-height: 18px; color: var(--muted); }
+.quick-row {
+  display: flex; align-items: center; gap: 12px; min-height: 56px; margin-top: -12px; padding: 8px 12px 8px 20px;
+  border: 1px solid var(--oa-line); border-radius: var(--radius-card); background: #fff; color: var(--oa-text); text-decoration: none; transition: border-color 150ms;
+}
+.quick-row:hover { border-color: var(--oa-black); }
+.quick-row:active { background: var(--oa-subtle); }
+.quick-row-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.quick-row .quick-title { font-size: 15px; line-height: 22px; }
+
+/* clickable rows end with a quiet chevron; rows that do nothing have none */
+.row-chevron { flex: none; width: 20px; margin-left: auto; text-align: center; font-size: 20px; line-height: 1; color: var(--oa-muted); }
+.list-row.is-link { cursor: pointer; transition: background-color 120ms; }
+.list-row.is-link:active { background: var(--oa-subtle); }
+.list-row.is-link:hover .row-chevron, .list-row.is-link:focus-visible .row-chevron, .quick-row:hover .row-chevron { color: var(--oa-black); }
+.cal-day { touch-action: manipulation; }
 
 /* Mass detail */
 .mass-head { padding-bottom: 0; }
@@ -614,6 +658,42 @@ button.music-title:hover { text-decoration: underline; text-underline-offset: 3p
   .role-checklist .role-row { grid-template-columns: 44px 28px minmax(0, 1fr); }
   .role-checklist .role-rename { grid-column: 1 / -1; margin: 0 0 4px 0; }
   .role-lock { margin-left: 0; }
+}
+
+/* Music Parts editor: candidates, then the chosen parts numbered 1..n */
+.parts-editor { display: grid; gap: 24px; }
+.parts-step { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; font-size: 15px; line-height: 22px; font-weight: 600; color: var(--oa-black); }
+.parts-order-count { font-size: 12px; font-weight: 500; color: var(--muted); }
+.parts-order > .hint { margin: 0 0 8px; }
+.parts-order .empty { margin: 0; padding: 12px 0; border-top: 1px solid var(--oa-line); }
+.parts-order-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--oa-line); }
+.parts-order-row {
+  display: grid; grid-template-columns: 28px minmax(0, 1fr) 44px 44px; column-gap: 8px; align-items: center;
+  min-height: 48px; padding: 2px 0; border-bottom: 1px solid var(--oa-line); font-variant-numeric: tabular-nums;
+}
+.parts-order-list.is-preview .parts-order-row { grid-template-columns: 28px minmax(0, 1fr); }
+.parts-order-name { min-width: 0; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--oa-text); overflow-wrap: anywhere; }
+.parts-order-name small { display: block; font-size: 12px; line-height: 18px; font-weight: 400; color: var(--muted); }
+.parts-order-row .icon-button { border-color: transparent; font-size: 16px; }
+.parts-order-row .icon-button:hover:not(:disabled) { background: var(--oa-subtle); }
+.parts-order-row .icon-button:disabled { color: var(--oa-muted); opacity: 0.4; cursor: default; }
+.sheet-message + .parts-order-list { margin-top: 16px; }
+.connect-masses { margin-top: 16px; }
+.connect-list, .connect-mode { margin: 0; padding: 0; border: 0; min-width: 0; }
+.connect-list > legend, .connect-mode > legend { margin: 0 0 8px; padding: 0; font-size: 12px; line-height: 18px; font-weight: 600; color: var(--muted); }
+.connect-mode { margin-top: 20px; }
+.connect-option { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 4px; border-bottom: 1px solid var(--oa-line); cursor: pointer; }
+.connect-option:first-of-type { border-top: 1px solid var(--oa-line); }
+.connect-option:hover { background: var(--oa-subtle); }
+.connect-option:has(input:checked) { background: var(--oa-subtle); }
+.connect-option input { flex: none; width: 18px; height: 18px; margin: 0 4px; accent-color: var(--oa-black); }
+.connect-option .time { width: 56px; flex: none; color: var(--muted); }
+.connect-option .list-main { display: flex; flex-direction: column; min-width: 0; }
+.connect-preview { margin-top: 20px; }
+.connect-preview .hint { margin: 8px 0 0; }
+@media (min-width: 1024px) {
+  .layout-card .parts-editor { grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr); gap: 32px; align-items: start; }
+  .layout-card .parts-order { position: sticky; top: 24px; }
 }
 
 /* dialogs and tables */

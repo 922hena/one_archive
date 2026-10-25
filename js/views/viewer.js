@@ -44,6 +44,14 @@ const PREV_KEYS = new Set(["ArrowLeft", "ArrowUp", "PageUp"]);
 const PREFS_KEY = "yearscore-perform";
 const TIMES_KEY = "yearscore-perform-times";
 const DISPLAY_KEY = "yearscore-perform-display";
+const HISTORY_KEY = "yearscoreViewer";
+
+// Quick buttons the member may put next to the menu button, and where that small group sits.
+const QUICK_KINDS = ["pages", "brightness", "zoom"];
+const CORNERS = ["top-right", "top-left", "bottom-right", "bottom-left"];
+const BRIGHTNESS_STEPS = [100, 85, 70];
+// Fixed icon markup (never user data).
+const MENU_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>';
 
 let pdfjsPromise = null;
 
@@ -73,8 +81,9 @@ function loadPrefs() {
     // older versions saved only "two pages on/off"
     perView: clampPerView(saved.perView ?? (saved.twoUp === true ? 2 : 1)),
     autoDefault: fallback.ok && fallback.value ? fallback.value : AUTO_DEFAULT,
-    locked: saved.locked === true,
-    vertical: saved.vertical === true // two or three pages stacked top to bottom
+    vertical: saved.vertical === true, // two or three pages stacked top to bottom
+    quick: Array.isArray(saved.quick) ? QUICK_KINDS.filter((kind) => saved.quick.includes(kind)) : [],
+    corner: CORNERS.includes(saved.corner) ? saved.corner : CORNERS[0]
   };
 }
 
@@ -176,7 +185,12 @@ export function openPerformance(ctx, { title, songs }) {
   let shownIndex = 0; // first page of what is really on screen (index moves before the new pages are ready)
   let zoom = 1;
   let pan = { x: 0, y: 0 };
-  let locked = prefs.locked; // view settings can't be changed by accident while performing
+  // Perform (default): only the score, layout locked. Edit: the layout tools can be used.
+  let editing = false;
+  let locked = true;
+  let toolsShown = false;
+  let quick = prefs.quick;
+  let corner = prefs.corner;
   const coarse = window.matchMedia("(pointer: coarse)").matches;
   const display = readJson(DISPLAY_KEY); // { portrait: {...}, landscape: {...} }
   let displayOpen = false;
@@ -277,6 +291,21 @@ export function openPerformance(ctx, { title, songs }) {
   );
   const opacityInput = h("input", { type: "range", id: "display-opacity", class: "display-range", min: "20", max: "100", step: "5", "aria-label": t("perform.arrowOpacity"), oninput: () => changeDisplay({ opacity: Number(opacityInput.value) }) });
   const brightnessInput = h("input", { type: "range", id: "display-brightness", class: "display-range", min: "40", max: "100", step: "5", "aria-label": t("perform.brightness"), oninput: () => changeDisplay({ brightness: Number(brightnessInput.value) }) });
+  const quickChecks = QUICK_KINDS.map((kind) => {
+    const id = `quick-${kind}`;
+    const input = h("input", { type: "checkbox", id, class: "display-check", onchange: () => setQuick(kind, input.checked) });
+    return { kind, input, line: h("div", { class: "auto-line" }, h("label", { for: id, text: t(`perform.quick.${kind}`) }), input) };
+  });
+  const cornerButtons = ["top-left", "top-right", "bottom-left", "bottom-right"].map((name) =>
+    h("button", {
+      type: "button",
+      class: "viewer-tool",
+      "data-corner": name,
+      "aria-label": t(`perform.corner.${name}`),
+      "aria-pressed": "false",
+      onclick: () => setCorner(name)
+    }, { "top-left": "↖", "top-right": "↗", "bottom-left": "↙", "bottom-right": "↘" }[name])
+  );
   const displayPanel = h("section", { class: "viewer-auto viewer-display", "aria-label": t("perform.displayTitle"), hidden: true },
     h("div", { class: "lineup-head" },
       h("strong", { text: t("perform.displayTitle") }),
@@ -289,9 +318,35 @@ export function openPerformance(ctx, { title, songs }) {
       h("div", { class: "auto-line" }, h("label", { for: "display-brightness", text: t("perform.brightness") }), brightnessInput),
       h("div", { class: "auto-line" }, h("button", { type: "button", class: "viewer-tool", onclick: resetDisplay }, t("perform.displayReset"))),
       h("p", { class: "auto-hint", text: t("perform.displayHint") })
+    ),
+    h("div", { class: "auto-body display-quick" },
+      h("strong", { class: "display-sub", text: t("perform.quickTitle") }),
+      quickChecks.map((item) => item.line),
+      h("div", { class: "auto-line" },
+        h("span", { class: "display-label", text: t("perform.cornerLabel") }),
+        h("div", { class: "viewer-view corner-buttons" }, ...cornerButtons)
+      ),
+      h("p", { class: "auto-hint", text: t("perform.quickHint") })
     )
   );
-  const stage = h("div", { class: "viewer-stage" }, holder, prevButton, nextButton, notice, lineupPanel, autoPanel, displayPanel);
+  // The small group over the score: the member's quick buttons and the tools menu button.
+  const menuButton = h("button", {
+    type: "button",
+    class: "perform-menu",
+    "aria-label": t("perform.showTools"),
+    "aria-expanded": "false",
+    onclick: () => toggleTools()
+  });
+  menuButton.innerHTML = MENU_ICON;
+  const quickPagesButton = h("button", { type: "button", class: "perform-quick", onclick: () => setPerView(perView === 1 ? 2 : 1, true) });
+  const quickBrightButton = h("button", { type: "button", class: "perform-quick num", onclick: stepBrightness });
+  const quickZoomOut = h("button", { type: "button", class: "perform-quick", "aria-label": t("perform.zoomOut"), onclick: () => setZoom(zoom - ZOOM_STEP, true) }, "−");
+  const quickZoomIn = h("button", { type: "button", class: "perform-quick", "aria-label": t("perform.zoomIn"), onclick: () => setZoom(zoom + ZOOM_STEP, true) }, "+");
+  const quickButtons = { pages: [quickPagesButton], brightness: [quickBrightButton], zoom: [quickZoomOut, quickZoomIn] };
+  const float = h("div", { class: "perform-float", role: "group", "aria-label": t("perform.quickGroup") },
+    quickPagesButton, quickBrightButton, quickZoomOut, quickZoomIn, menuButton
+  );
+  const stage = h("div", { class: "viewer-stage" }, holder, prevButton, nextButton, notice, float, lineupPanel, autoPanel, displayPanel);
   // Handwritten notes: a canvas over the pages plus its tool bar (see notes-layer.js).
   const notes = createNotesLayer({
     visiblePages,
@@ -303,14 +358,18 @@ export function openPerformance(ctx, { title, songs }) {
   });
   stage.append(notes.canvas, notes.bar);
   const displayButton = h("button", { type: "button", class: "viewer-tool", "aria-expanded": "false", onclick: () => toggleDisplayPanel() }, t("perform.displayButton"));
-  const lockButton = h("button", { type: "button", class: "viewer-tool", "aria-pressed": String(locked), onclick: toggleLock }, t(locked ? "perform.locked" : "perform.lock"));
+  const modeButton = h("button", { type: "button", class: "viewer-tool", "aria-pressed": "false", onclick: () => setEditing(!editing) }, t("perform.editLayout"));
   const offlineButton = h("button", { type: "button", class: "viewer-tool", "aria-pressed": "false", onclick: toggleOffline }, t("perform.offlineSave"));
+  // Layout tools appear only in Edit; page turning, Lineup, Auto turn and notes work in both states.
+  const editTools = h("div", { class: "viewer-edit-tools", role: "group", "aria-label": t("perform.editTools") },
+    h("div", { class: "viewer-view" }, zoomOutButton, zoomLabel, zoomInButton), fitWidthButton, viewGroup, displayButton
+  );
   const tools = h("div", { class: "viewer-tools", role: "group", "aria-label": t("perform.viewTools") },
-    zoomOutButton, zoomLabel, zoomInButton, fitWidthButton, viewGroup, autoButton, displayButton, ...notes.buttons, lockButton, offlineButton
+    modeButton, editTools, autoButton, ...notes.buttons, offlineButton
   );
   const dialog = h(
     "dialog",
-    { class: "viewer", "aria-label": title },
+    { class: "viewer tools-hidden", "aria-label": title },
     h("div", { class: "viewer-bar" },
       prevSongButton,
       nextSongButton,
@@ -326,7 +385,7 @@ export function openPerformance(ctx, { title, songs }) {
   );
 
   function persistPrefs() {
-    savePrefs({ perView, autoDefault, locked, vertical });
+    savePrefs({ perView, autoDefault, vertical, quick, corner });
   }
 
   function showLoading() {
@@ -698,6 +757,8 @@ export function openPerformance(ctx, { title, songs }) {
     zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
     zoomOutButton.disabled = locked || zoom <= 1;
     zoomInButton.disabled = locked || zoom >= ZOOM_MAX;
+    quickZoomOut.disabled = zoom <= 1;
+    quickZoomIn.disabled = zoom >= ZOOM_MAX;
     if (!el) return;
     const { content, box } = sizes();
     pan = clampPan(pan, zoom, content, box);
@@ -705,8 +766,9 @@ export function openPerformance(ctx, { title, songs }) {
     stage.classList.toggle("is-zoomed", zoom > 1);
   }
 
-  function setZoom(next) {
-    if (locked) return;
+  // fromQuick: a quick button the member chose to show, so it also works while the layout is locked.
+  function setZoom(next, fromQuick = false) {
+    if (locked && !fromQuick) return;
     zoom = clampZoom(Math.round(next * 100) / 100);
     if (zoom === 1) pan = { x: 0, y: 0 };
     applyZoom();
@@ -719,14 +781,15 @@ export function openPerformance(ctx, { title, songs }) {
   }
 
   // Pages on one screen (1 to 4). Pages are drawn smaller for more pages, so they are drawn again.
-  function setPerView(count) {
-    if (locked) return;
+  function setPerView(count, fromQuick = false) {
+    if (locked && !fromQuick) return;
     const next = clampPerView(count);
     if (next === perView) return;
     perView = next;
     viewButtons.forEach((button, n) => button.setAttribute("aria-pressed", String(n + 1 === perView)));
     persistPrefs();
     updateStackButton();
+    updateQuick();
     rendered.clear();
     show(index);
   }
@@ -904,10 +967,11 @@ export function openPerformance(ctx, { title, songs }) {
     opacityInput.value = String(settings.opacity);
     brightnessInput.value = String(settings.brightness);
     Object.keys(NAV_SIZES).forEach((name, n) => sizeButtons[n].setAttribute("aria-pressed", String(name === settings.size)));
+    updateQuick();
   }
 
-  function changeDisplay(patch) {
-    if (locked) {
+  function changeDisplay(patch, fromQuick = false) {
+    if (locked && !fromQuick) {
       flash(t("perform.lockHint"));
       applyDisplay();
       return;
@@ -940,20 +1004,75 @@ export function openPerformance(ctx, { title, songs }) {
     }
   }
 
-  // ---- lock: zoom, pages on screen and display can't change by accident ----
-  function applyLock() {
-    lockButton.setAttribute("aria-pressed", String(locked));
-    lockButton.textContent = t(locked ? "perform.locked" : "perform.lock");
+  // ---- Perform / Edit: in Perform the layout (zoom, pages on screen, display, buttons) can't change by accident ----
+  function applyMode() {
+    locked = !editing;
+    modeButton.setAttribute("aria-pressed", String(editing));
+    modeButton.textContent = t(editing ? "perform.editDone" : "perform.editLayout");
     dialog.classList.toggle("is-locked", locked);
+    dialog.classList.toggle("is-editing", editing);
     for (const button of [zoomOutButton, zoomLabel, zoomInButton, fitWidthButton, ...viewButtons]) button.disabled = locked;
     updateStackButton();
-    if (!locked) applyZoom(); // restores the zoom-out / zoom-in limits
+    applyZoom(); // restores the zoom-out / zoom-in limits
   }
 
-  function toggleLock() {
-    locked = !locked;
+  function setEditing(next) {
+    editing = next;
+    if (!editing && displayOpen) toggleDisplayPanel(false);
+    applyMode();
+    flash(t(editing ? "perform.editOn" : "perform.editOff"));
+  }
+
+  // The menu button (or a tap in the middle of the score) shows and hides the tool bars.
+  // Hiding them goes back to Perform, so the layout is locked again.
+  function toggleTools(force) {
+    toolsShown = force ?? !toolsShown;
+    dialog.classList.toggle("tools-hidden", !toolsShown);
+    menuButton.setAttribute("aria-expanded", String(toolsShown));
+    menuButton.setAttribute("aria-label", t(toolsShown ? "perform.hideTools" : "perform.showTools"));
+    if (!toolsShown) {
+      closeSidePanels();
+      if (editing) {
+        editing = false;
+        applyMode();
+      }
+    }
+    onResize(); // the score gets the freed space (PDF pages are drawn again at the new size)
+  }
+
+  // ---- quick buttons next to the menu button (only the ones the member chose) ----
+  function updateQuick() {
+    for (const kind of QUICK_KINDS) for (const button of quickButtons[kind]) button.hidden = !quick.includes(kind);
+    for (const item of quickChecks) item.input.checked = quick.includes(item.kind);
+    float.dataset.corner = corner;
+    for (const button of cornerButtons) button.setAttribute("aria-pressed", String(button.dataset.corner === corner));
+    const nextPages = perView === 1 ? 2 : 1;
+    quickPagesButton.textContent = t(perView === 1 ? "perform.quickOne" : "perform.quickMany", { count: perView });
+    quickPagesButton.setAttribute("aria-label", t("perform.quickPagesLabel", { count: perView, next: nextPages }));
+    const brightness = currentDisplay().brightness;
+    quickBrightButton.textContent = `☀ ${brightness}%`;
+    quickBrightButton.setAttribute("aria-label", t("perform.quickBrightnessLabel", { value: brightness }));
+  }
+
+  function setQuick(kind, on) {
+    if (locked) return;
+    quick = QUICK_KINDS.filter((item) => (item === kind ? on : quick.includes(item)));
     persistPrefs();
-    applyLock();
+    updateQuick();
+  }
+
+  function setCorner(name) {
+    if (locked) return;
+    corner = name;
+    persistPrefs();
+    updateQuick();
+  }
+
+  // 100% -> 85% -> 70% -> 100%
+  function stepBrightness() {
+    const current = currentDisplay().brightness;
+    const at = BRIGHTNESS_STEPS.findIndex((step) => current >= step);
+    changeDisplay({ brightness: BRIGHTNESS_STEPS[(at < 0 ? BRIGHTNESS_STEPS.length - 1 : at + 1) % BRIGHTNESS_STEPS.length] }, true);
   }
   // ---- save on this device ----
   async function refreshOffline() {
@@ -1021,9 +1140,9 @@ export function openPerformance(ctx, { title, songs }) {
     else if (event.key === " " && !onButton) step = event.shiftKey ? -1 : 1;
     else if (event.key === "Home") step = -index;
     else if (event.key === "End") step = pages.length - 1 - index;
-    else if (!onButton && (event.key === "+" || event.key === "=")) return void setZoom(zoom + ZOOM_STEP);
-    else if (!onButton && (event.key === "-" || event.key === "_")) return void setZoom(zoom - ZOOM_STEP);
-    else if (!onButton && event.key === "0") return void setZoom(1);
+    else if (!onButton && (event.key === "+" || event.key === "=")) return void setZoom(zoom + ZOOM_STEP, canZoomByHand());
+    else if (!onButton && (event.key === "-" || event.key === "_")) return void setZoom(zoom - ZOOM_STEP, canZoomByHand());
+    else if (!onButton && event.key === "0") return void setZoom(1, canZoomByHand());
     if (!step) return;
     event.preventDefault();
     const now = Date.now();
@@ -1035,10 +1154,10 @@ export function openPerformance(ctx, { title, songs }) {
   }
 
   function onPointerDown(event) {
-    if (event.target.closest("button, .viewer-lineup, .viewer-auto, .viewer-notes")) return;
+    if (event.target.closest("button, .perform-float, .viewer-lineup, .viewer-auto, .viewer-notes")) return;
     touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
     moved = false;
-    if (touches.size === 2 && !locked) {
+    if (touches.size === 2 && canZoomByHand()) {
       // two fingers: pinch to zoom (and move the page while pinching)
       const [a, b] = [...touches.values()];
       gesture = { kind: "pinch", dist: Math.hypot(a.x - b.x, a.y - b.y), zoom, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
@@ -1058,7 +1177,7 @@ export function openPerformance(ctx, { title, songs }) {
     point.y = event.clientY;
     if (gesture?.kind === "pinch" && touches.size >= 2) {
       const [a, b] = [...touches.values()];
-      if (gesture.dist > 0) {
+      if (gesture.dist > 0 && canZoomByHand()) {
         zoom = clampZoom((gesture.zoom * Math.hypot(a.x - b.x, a.y - b.y)) / gesture.dist);
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
         if (gesture.mid) pan = { x: pan.x + mid.x - gesture.mid.x, y: pan.y + mid.y - gesture.mid.y };
@@ -1069,7 +1188,7 @@ export function openPerformance(ctx, { title, songs }) {
       return;
     }
     // one finger on a zoomed page moves the page instead of turning it
-    if (zoom > 1 && !locked && pointer?.id === event.pointerId) {
+    if (zoom > 1 && canZoomByHand() && pointer?.id === event.pointerId) {
       if (Math.hypot(point.x - pointer.x, point.y - pointer.y) > TAP_PX) moved = true;
       pan = { x: pan.x + point.x - before.x, y: pan.y + point.y - before.y };
       applyZoom();
@@ -1098,7 +1217,12 @@ export function openPerformance(ctx, { title, songs }) {
     const position = (event.clientX - box.left) / box.width;
     if (position < 0.35) turn(-1);
     else if (position > 0.65) turn(1);
-    else dialog.classList.toggle("is-immersive");
+    else toggleTools();
+  }
+
+  // Pinch, Ctrl + wheel and moving a zoomed page: in Edit, or in Perform when the member chose the zoom buttons.
+  function canZoomByHand() {
+    return !locked || quick.includes("zoom");
   }
 
   function onResize() {
@@ -1141,8 +1265,8 @@ export function openPerformance(ctx, { title, songs }) {
   stage.addEventListener("wheel", (event) => {
     if (!event.ctrlKey) return;
     event.preventDefault();
-    if (locked) return;
-    setZoom(zoom - event.deltaY * 0.01);
+    if (!canZoomByHand()) return;
+    setZoom(zoom - event.deltaY * 0.01, true);
   }, { passive: false });
   window.addEventListener("resize", onResize);
   document.addEventListener("fullscreenchange", onFullscreenChange);
@@ -1186,8 +1310,20 @@ export function openPerformance(ctx, { title, songs }) {
     document.documentElement.style.overflow = previousOverflow;
     for (const promise of blobUrls.values()) promise.then((url) => URL.revokeObjectURL(url)).catch(() => {});
     for (const promise of pdfDocs.values()) promise.then((doc) => doc.destroy()).catch(() => {});
+    window.removeEventListener("popstate", onPopState);
+    // Closed with × or Esc: take back the history step added on opening, so Back isn't needed twice.
+    if (history.state?.[HISTORY_KEY] === historyMark) history.back();
     dialog.remove();
   });
+
+  // Opening adds one history step (same address). Back — a swipe, the Android back button or a mouse
+  // button — then closes the viewer and leaves the page underneath exactly as it was.
+  const historyMark = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  function onPopState() {
+    if (!closed && history.state?.[HISTORY_KEY] !== historyMark) dialog.close();
+  }
+  history.pushState({ ...(history.state ?? {}), [HISTORY_KEY]: historyMark }, "");
+  window.addEventListener("popstate", onPopState);
 
   document.documentElement.style.overflow = "hidden";
   document.body.append(dialog);
@@ -1197,7 +1333,7 @@ export function openPerformance(ctx, { title, songs }) {
   loadAllSongs();
   applyZoom();
   applyDisplay();
-  applyLock();
+  applyMode();
   refreshOffline();
   ready[0].promise.then(() => {
     if (closed) return;

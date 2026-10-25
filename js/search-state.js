@@ -7,7 +7,7 @@ export const SORTS = ["title", "composer", "period", "count", "key", "last_perfo
 export const VIEWS = ["index", "notes", "preview"];
 export const COUNT_OPS = ["eq", "gte", "lte", "between"];
 // Decision C3: shown first in the Music Parts filter; the other parts are under "+ More".
-export const DEFAULT_PART_CODES = ["prelude", "entrance", "offertory", "communion", "post_communion", "recessional", "postlude"];
+export const DEFAULT_PART_CODES = ["prelude", "entrance", "offertory", "communion", "post_communion", "meditation", "recessional", "postlude"];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_COUNT = 9999;

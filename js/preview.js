@@ -8,7 +8,8 @@ import { PREVIEW_OBSERVANCES } from "./preview-data.js";
 // so nothing is read from or written to the database. Sample Missae exist only in this page.
 
 const SAMPLE_TIMES = ["11:00:00", "18:00:00"];
-const LOCKED = 'a[href^="#/mass/"], a[href^="#/date/"], .quick-card, [data-locked]';
+const LOCKED = 'a[href^="#/mass/"], a[href^="#/date/"], .quick-card, .quick-row, [data-locked]';
+const LOCKED_HASH = /^#\/(mass|date|layouts)\b/;
 
 const viewRoot = document.querySelector("#view");
 const observanceDates = [...new Set(PREVIEW_OBSERVANCES.map((row) => row.calendar_date))];
@@ -73,6 +74,11 @@ translateDom();
 const ctx = {
   db: previewDb,
   navigate(hash) {
+    // e.g. tapping a date twice opens its Missa, which needs an account
+    if (LOCKED_HASH.test(hash)) {
+      notify(t("preview.locked"));
+      return;
+    }
     window.location.hash = hash;
   },
   refresh() {

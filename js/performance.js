@@ -1,20 +1,20 @@
 // Pure helpers for Performance Mode (no browser APIs, so they can be tested).
 // A "song" is one linked score in a Missa's Music list: { key, number, label, score, files }.
+import { partNumber, sortedParts } from "./music-parts.js";
 
 function roleName(role) {
   if (!role) return "";
   return role.name_la || role.name_en || role.name_ko || "";
 }
 
-// Songs in the order of the Missa: Music Part order (liturgical slot_no), then link order.
+// Songs in the order of the Missa: the member's Music Parts order, then link order. A song's number is
+// its part's place in that Missa (1..n), the same number the Missa screen shows.
 // Links whose score has no file are left out, because there is nothing to show.
 export function setlistFromMass(mass, roles = []) {
   const roleById = new Map(roles.map((role) => [role.id, role]));
-  const slots = [...(mass?.mass_music_slots ?? [])].sort(
-    (a, b) => (roleById.get(a.role_id)?.slot_no ?? 99) - (roleById.get(b.role_id)?.slot_no ?? 99)
-  );
+  const slots = sortedParts(mass?.mass_music_slots, roleById);
   const songs = [];
-  for (const slot of slots) {
+  for (const [index, slot] of slots.entries()) {
     const role = roleById.get(slot.role_id);
     const entries = [...(slot.mass_music_entries ?? [])].sort(
       (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.created_at ?? "").localeCompare(String(b.created_at ?? ""))
@@ -24,7 +24,7 @@ export function setlistFromMass(mass, roles = []) {
       if (!entry.owned_scores || !files.length) continue;
       songs.push({
         key: entry.id,
-        number: String((role?.slot_no ?? 0) + 1).padStart(2, "0"),
+        number: partNumber(index),
         label: slot.display_name || roleName(role) || "",
         score: entry.owned_scores,
         files

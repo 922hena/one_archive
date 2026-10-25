@@ -130,14 +130,14 @@ test("phase 1: masses, scores, links, reuse and isolation", { skip: ready ? fals
     assert.deepEqual([leftA.data, leftB.data], [[], []], "test rows were not fully cleaned up");
   });
 
-  await t.test("reference data: 18 fixed items and the official calendar", async () => {
+  await t.test("reference data: 19 fixed items and the official calendar", async () => {
     const roles = await a.rest("GET", "liturgical_roles?select=id,code,slot_no,name_ko&order=slot_no");
-    assert.equal(roles.data.length, 18);
-    assert.deepEqual(roles.data.map((role) => role.slot_no), [...Array(18).keys()]);
-    assert.equal(roles.data[17].code, "postlude");
+    assert.equal(roles.data.length, 19);
+    assert.deepEqual(roles.data.map((role) => role.slot_no), [...Array(19).keys()]);
+    assert.deepEqual(roles.data.slice(15).map((role) => role.code), ["post_communion", "meditation", "recessional", "postlude"]);
     assert.equal(roles.data[12].name_ko, "주님께 나라와");
     state.roles = roles.data;
-    state.postlude = roles.data[17];
+    state.postlude = roles.data[18];
 
     const day = await a.rest("GET", "liturgical_observances?select=*&calendar_date=eq.2026-10-25");
     assert.equal(day.data.length, 1);
@@ -166,7 +166,7 @@ test("phase 1: masses, scores, links, reuse and isolation", { skip: ready ? fals
     state.mass2 = second;
 
     const slots1 = await a.rest("POST", "mass_music_slots", state.roles.map((role) => ({ mass_event_id: first.id, role_id: role.id })));
-    assert.equal(slots1.data.length, 18);
+    assert.equal(slots1.data.length, 19);
     const slots2 = await a.rest("POST", "mass_music_slots", [{ mass_event_id: second.id, role_id: state.postlude.id }]);
     assert.ok(slots2.ok);
     state.postlude1 = slots1.data.find((slot) => slot.role_id === state.postlude.id);

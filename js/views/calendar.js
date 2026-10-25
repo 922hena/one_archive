@@ -16,6 +16,35 @@ import { h, colorDot, notify, createDialog, errorMessage } from "../ui.js";
 import { openMassForm, massTitle, liturgyLine, liturgyText, openMassPerformance } from "./mass.js";
 import { linkedCount } from "../performance.js";
 
+// Several Missae on one date: the member picks one. meta(mass) is the line under the title.
+function chooseMass(masses, { title, meta, onChoose }) {
+  const { body, footer, close } = createDialog(title);
+  body.append(
+    h("ul", { class: "plain-list" },
+      masses.map((mass) =>
+        h("li", {},
+          h("button", {
+            type: "button",
+            class: "list-row is-link choose-row",
+            onclick: () => {
+              close();
+              onChoose(mass);
+            }
+          },
+            h("span", { class: "time num", text: formatTime(mass.start_time) || t("calendar.noTime") }),
+            h("div", { class: "list-main" },
+              h("strong", { translate: "no", text: massTitle(mass) }),
+              h("span", { class: "meta", text: meta(mass) })
+            ),
+            h("span", { class: "row-chevron", "aria-hidden": "true", text: "›" })
+          )
+        )
+      )
+    )
+  );
+  footer.append(h("button", { type: "button", class: "ghost-button", onclick: close }, t("common.cancel")));
+}
+
 // Performance Mode for a date: only Missae with linked scores qualify. One opens at once, several are listed.
 async function performDate(ctx, masses, roles) {
   const ready = masses.filter((mass) => linkedCount(mass) > 0);
@@ -34,30 +63,48 @@ async function performDate(ctx, masses, roles) {
     await open(ready[0]);
     return;
   }
-  const { body, footer, close } = createDialog(t("perform.chooseMass"));
-  body.append(
-    h("ul", { class: "plain-list" },
-      ready.map((mass) =>
-        h("li", {},
-          h("button", {
-            type: "button",
-            class: "list-row is-link choose-row",
-            onclick: async () => {
-              close();
-              await open(mass);
-            }
-          },
-            h("span", { class: "time num", text: formatTime(mass.start_time) || t("calendar.noTime") }),
-            h("div", { class: "list-main" },
-              h("strong", { translate: "no", text: massTitle(mass) }),
-              h("span", { class: "meta", text: t("perform.linkedScores", { count: linkedCount(mass) }) })
-            )
-          )
-        )
-      )
-    )
-  );
-  footer.append(h("button", { type: "button", class: "ghost-button", onclick: close }, t("common.cancel")));
+  chooseMass(ready, {
+    title: t("perform.chooseMass"),
+    meta: (mass) => t("perform.linkedScores", { count: linkedCount(mass) }),
+    onChoose: open
+  });
+}
+
+// Tapping a date twice opens its Missa (one) or a list (several); a date without one just stays selected.
+// The first tap selects the date and redraws the grid, so the last tap is kept here, not on the element.
+const DOUBLE_TAP_MS = 450;
+let lastDayTap = null;
+
+async function openDate(ctx, iso, ids) {
+  if (!ids.length) return;
+  if (ids.length === 1) {
+    ctx.navigate(`#/mass/${ids[0]}`);
+    return;
+  }
+  try {
+    const masses = await ctx.db.massesOn(iso);
+    chooseMass(masses, {
+      title: t("calendar.chooseMass"),
+      meta: (mass) => {
+        const slots = mass.mass_music_slots ?? [];
+        const linked = slots.reduce((sum, slot) => sum + (slot.mass_music_entries?.length ?? 0), 0);
+        return t("calendar.itemSummary", { items: slots.length, linked });
+      },
+      onChoose: (mass) => ctx.navigate(`#/mass/${mass.id}`)
+    });
+  } catch (error) {
+    notify(errorMessage(error, "calendar.openFailed"), "error");
+  }
+}
+
+function onDayTap(ctx, event, iso, ids) {
+  if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button > 0) return;
+  const now = Date.now();
+  const again = lastDayTap?.iso === iso && now - lastDayTap.time < DOUBLE_TAP_MS;
+  lastDayTap = again ? null : { iso, time: now };
+  if (!again) return;
+  event.preventDefault();
+  openDate(ctx, iso, ids);
 }
 
 function groupBy(rows, key) {
@@ -105,7 +152,8 @@ export function calendarCard(ctx, { year, month, selected, today, observancesByD
     h("div", { class: "cal-row" },
       week.map((cell, index) => {
         const observances = observancesByDate.get(cell.iso) ?? [];
-        const massCount = massesByDate.get(cell.iso)?.length ?? 0;
+        const massIds = (massesByDate.get(cell.iso) ?? []).map((row) => row.id);
+        const massCount = massIds.length;
         const classes = ["cal-day"];
         if (!cell.inMonth) classes.push("is-outside");
         if (index === 0) classes.push("is-sunday");
@@ -116,7 +164,13 @@ export function calendarCard(ctx, { year, month, selected, today, observancesByD
           observances.map((observance) => liturgyLabel(observanceTitle(observance).text, observance.color_code)).join(", "),
           massCount ? t(massCount === 1 ? "calendar.massCountOne" : "calendar.massCount", { count: massCount }) : ""
         ].filter(Boolean).join(", ");
-        return h("a", { href: `#/${base}/${cell.iso}`, class: classes.join(" "), "aria-label": label, "aria-current": cell.iso === selected ? "date" : null },
+        return h("a", {
+          href: `#/${base}/${cell.iso}`,
+          class: classes.join(" "),
+          "aria-label": label,
+          "aria-current": cell.iso === selected ? "date" : null,
+          onclick: (event) => onDayTap(ctx, event, cell.iso, massIds)
+        },
           h("span", { class: "cal-num num", text: String(cell.day) }),
           h("span", { class: "cal-marks" },
             observances.length ? colorDot(observances[0].color_code, colorSwatch(observances[0].color_code)) : null,
@@ -160,7 +214,8 @@ function dayPanel(ctx, { selected, observances, masses, roles, layouts, venues }
                   ].filter(Boolean).flatMap((part, index) => (index ? [" · ", part] : [part]))
                 )
               ),
-              h("span", { class: "meta num", text: t("calendar.itemSummary", { items: slots.length, linked }) })
+              h("span", { class: "meta num", text: t("calendar.itemSummary", { items: slots.length, linked }) }),
+              h("span", { class: "row-chevron", "aria-hidden": "true", text: "›" })
             )
           );
         })

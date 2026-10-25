@@ -40,7 +40,8 @@ function todayArea({ selected, today, observances, masses }) {
               h("div", { class: "list-main" },
                 h("strong", { translate: "no", text: massTitle(mass) }),
                 mass.venue_name ? h("span", { class: "meta", translate: "no", text: mass.venue_name }) : null
-              )
+              ),
+              h("span", { class: "row-chevron", "aria-hidden": "true", text: "›" })
             )
           )
         )
@@ -67,8 +68,23 @@ function todayArea({ selected, today, observances, masses }) {
 // Fixed icon markup written in this file (never user data).
 const ICONS = {
   add: '<path d="M12 5v14M5 12h14"/>',
-  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'
+  search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  parts: '<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6h1M4 12h1M4 18h1"/>'
 };
+
+// Slim full-width entry under the two Quick cards.
+function quickRow(icon, title, hint, href) {
+  const iconBox = h("span", { class: "quick-icon", "aria-hidden": "true" });
+  iconBox.innerHTML = `<svg class="tab-icon" viewBox="0 0 24 24">${ICONS[icon]}</svg>`;
+  return h("a", { href, class: "quick-row" },
+    iconBox,
+    h("span", { class: "quick-row-text" },
+      h("span", { class: "quick-title", text: title }),
+      h("span", { class: "quick-hint", text: hint })
+    ),
+    h("span", { class: "row-chevron", "aria-hidden": "true", text: "›" })
+  );
+}
 
 function quickCard(icon, title, hint, onclick) {
   const iconBox = h("span", { class: "quick-icon", "aria-hidden": "true" });
@@ -120,7 +136,8 @@ export async function renderHome(container, ctx, { date }) {
       h("div", { class: "quick-grid" },
         quickCard("add", t("home.addScore"), t("home.addScoreHint"), () => openUploadDialog(ctx)),
         quickCard("search", t("home.search"), t("home.searchHint"), () => ctx.navigate("#/search"))
-      )
+      ),
+      quickRow("parts", t("home.musicParts"), t("home.musicPartsHint"), "#/layouts")
     )
   );
 }

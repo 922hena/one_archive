@@ -1,5 +1,6 @@
 import { t } from "../i18n.js";
-import { formatShortDate, formatTime, sortBySlotNo, todayIso } from "../format.js";
+import { formatShortDate, formatTime, todayIso } from "../format.js";
+import { sortedParts } from "../music-parts.js";
 import { h, actionMenu, createDialog, errorMessage, notify, setBusy, displayScoreTitle } from "../ui.js";
 import { KEY_MODES, KEY_TONICS, tonicLabel } from "../score-meta.js";
 import {
@@ -165,7 +166,7 @@ async function openAddToMissa(ctx, row, roleById) {
   }
 
   function massSection(mass) {
-    const slots = sortBySlotNo(mass.mass_music_slots ?? [], (slot) => roleById.get(slot.role_id)?.slot_no ?? 99);
+    const slots = sortedParts(mass.mass_music_slots, roleById);
     return h("section", { class: "add-mass" },
       h("h3", { class: "sub-head", translate: "no", text: [formatTime(mass.start_time), massTitle(mass)].filter(Boolean).join(" · ") }),
       slots.length
@@ -233,6 +234,9 @@ export async function renderSearch(container, ctx, { query = "" } = {}) {
     ctx.db.periods(),
     loadViewConfig(ctx)
   ]);
+  // Coming back with Back: load as many results as were shown before, so the old scroll position exists.
+  const restoredRows = Number(ctx.restored?.searchRows) || 0;
+  const rememberHere = ctx.remember ?? (() => {});
   let config = savedConfig;
   let state = parseSearchQuery(query);
   state.sort ??= config.sort;
@@ -1206,6 +1210,7 @@ export async function renderSearch(container, ctx, { query = "" } = {}) {
       rows = append ? rows.concat(data) : data;
       if (data.length) total = Number(data[0].total_count) || rows.length;
       else if (!append) total = 0;
+      rememberHere("searchRows", rows.length);
       renderResults({ appended: append ? data : null });
     } catch (error) {
       if (mine !== searchToken) return;
@@ -1231,4 +1236,9 @@ export async function renderSearch(container, ctx, { query = "" } = {}) {
   renderControls();
   syncUrl();
   await runSearch();
+  while (rows.length < Math.min(restoredRows, total) && rows.length) {
+    const before = rows.length;
+    await runSearch({ append: true });
+    if (rows.length === before) break;
+  }
 }

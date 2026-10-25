@@ -5,6 +5,7 @@ import { comparePages } from "./pages.js";
 import { liturgyFields, needsLiturgyRefresh, occurrenceDates, occurrenceWindow } from "./recurrence.js";
 import { isMissingRelation } from "./errors.js";
 import { playedEntries } from "./played.js";
+import { sortedParts } from "./music-parts.js";
 
 export { isMissingRelation };
 
@@ -88,7 +89,7 @@ export function createDb(supabase) {
       supabase
         .from("mass_events")
         .select(
-          `*,${MASS_OBSERVANCE},mass_music_slots(id,role_id,display_name,` +
+          `*,${MASS_OBSERVANCE},mass_music_slots(id,role_id,display_name,sort_order,` +
             `mass_music_entries(id,sort_order,created_at,owned_score_id,not_played_at,note,` +
             `owned_scores(${SCORE_FIELDS},score_files(${FILE_FIELDS}))))`
         )
@@ -104,16 +105,18 @@ export function createDb(supabase) {
     return row;
   }
 
+  // items come in the member's order; their place becomes sort_order (1, 2, 3 ...).
   async function createMass(fields, items) {
     const created = await run(supabase.from("mass_events").insert(fields).select("id").single());
     if (items.length) {
       try {
         await run(
           supabase.from("mass_music_slots").insert(
-            items.map((item) => ({
+            items.map((item, index) => ({
               mass_event_id: created.id,
               role_id: item.role_id,
-              display_name: normalizeName(item.display_name)
+              display_name: normalizeName(item.display_name),
+              sort_order: item.sort_order ?? index + 1
             }))
           )
         );
@@ -205,7 +208,8 @@ export function createDb(supabase) {
     const [observances, skips, layoutRows] = await Promise.all([
       observancesBetween(from, to),
       run(supabase.from("mass_series_skips").select("series_id,skip_date").gte("skip_date", from).lte("skip_date", to)),
-      layouts()
+      layouts(),
+      roles() // for the official order of items saved before there was a personal order
     ]);
     const observanceByDate = new Map();
     for (const row of observances) if (!observanceByDate.has(row.calendar_date)) observanceByDate.set(row.calendar_date, row);
@@ -228,9 +232,10 @@ export function createDb(supabase) {
       const dates = occurrenceDates(item, from, to).filter((date) => !skipSet.has(`${item.id}:${date}`));
       if (!dates.length) continue;
       const have = new Set(existing.map((row) => row.local_date));
-      const slots = (layoutById.get(item.layout_id)?.user_mass_layout_items ?? []).map((slot) => ({
+      const slots = layoutItemsInOrder(layoutById.get(item.layout_id)).map((slot, index) => ({
         role_id: slot.role_id,
-        display_name: slot.display_name
+        display_name: slot.display_name,
+        sort_order: index + 1
       }));
       for (const date of dates) {
         if (have.has(date)) continue;
@@ -261,7 +266,7 @@ export function createDb(supabase) {
   async function syncSeriesMasses(seriesId, fromDate, patch, layoutItems) {
     let query = supabase
       .from("mass_events")
-      .select("id,mass_music_slots(id,role_id,display_name,mass_music_entries(id))")
+      .select("id,mass_music_slots(id,role_id,display_name,sort_order,mass_music_entries(id))")
       .eq("series_id", seriesId)
       .eq("series_locked", false);
     if (fromDate) query = query.gte("local_date", fromDate);
@@ -323,7 +328,9 @@ export function createDb(supabase) {
     await deleteMasses(targets.map((item) => item.id));
   }
 
+  // wanted: the Missa's Music Parts in the member's order. Items with linked scores are never removed.
   async function saveSlots(massId, wanted, existing) {
+    wanted = wanted.map((item, index) => ({ ...item, sort_order: item.sort_order ?? index + 1 }));
     const wantedByRole = new Map(wanted.map((item) => [item.role_id, item]));
     const removals = existing.filter((slot) => !wantedByRole.has(slot.role_id));
     if (removals.length) {
@@ -344,7 +351,8 @@ export function createDb(supabase) {
           additions.map((item) => ({
             mass_event_id: massId,
             role_id: item.role_id,
-            display_name: normalizeName(item.display_name)
+            display_name: normalizeName(item.display_name),
+            sort_order: item.sort_order
           }))
         )
       );
@@ -352,18 +360,24 @@ export function createDb(supabase) {
     for (const slot of existing) {
       const item = wantedByRole.get(slot.role_id);
       if (!item) continue;
+      const patch = {};
       const nextName = normalizeName(item.display_name);
-      if (nextName !== (slot.display_name ?? null)) {
-        await run(supabase.from("mass_music_slots").update({ display_name: nextName }).eq("id", slot.id));
-      }
+      if (nextName !== (slot.display_name ?? null)) patch.display_name = nextName;
+      if (item.sort_order !== (slot.sort_order ?? 0)) patch.sort_order = item.sort_order;
+      if (Object.keys(patch).length) await run(supabase.from("mass_music_slots").update(patch).eq("id", slot.id));
     }
+  }
+
+  // A saved selection's items in the member's order (older rows without an order follow the official order).
+  function layoutItemsInOrder(layout) {
+    return sortedParts(layout?.user_mass_layout_items, new Map((rolesCache ?? []).map((role) => [role.id, role])));
   }
 
   function layouts() {
     return run(
       supabase
         .from("user_mass_layouts")
-        .select("id,name,created_at,updated_at,user_mass_layout_items(id,role_id,display_name)")
+        .select("id,name,created_at,updated_at,user_mass_layout_items(id,role_id,display_name,sort_order)")
         .order("name")
     );
   }
@@ -374,10 +388,11 @@ export function createDb(supabase) {
       try {
         await run(
           supabase.from("user_mass_layout_items").insert(
-            items.map((item) => ({
+            items.map((item, index) => ({
               layout_id: created.id,
               role_id: item.role_id,
-              display_name: normalizeName(item.display_name)
+              display_name: normalizeName(item.display_name),
+              sort_order: item.sort_order ?? index + 1
             }))
           )
         );
@@ -394,6 +409,7 @@ export function createDb(supabase) {
       await run(supabase.from("user_mass_layouts").update({ name: name.trim() }).eq("id", layout.id));
     }
     const existing = layout.user_mass_layout_items ?? [];
+    items = items.map((item, index) => ({ ...item, sort_order: item.sort_order ?? index + 1 }));
     const wantedByRole = new Map(items.map((item) => [item.role_id, item]));
     const removals = existing.filter((item) => !wantedByRole.has(item.role_id));
     if (removals.length) {
@@ -406,7 +422,8 @@ export function createDb(supabase) {
           additions.map((item) => ({
             layout_id: layout.id,
             role_id: item.role_id,
-            display_name: normalizeName(item.display_name)
+            display_name: normalizeName(item.display_name),
+            sort_order: item.sort_order
           }))
         )
       );
@@ -414,10 +431,11 @@ export function createDb(supabase) {
     for (const current of existing) {
       const item = wantedByRole.get(current.role_id);
       if (!item) continue;
+      const patch = {};
       const nextName = normalizeName(item.display_name);
-      if (nextName !== (current.display_name ?? null)) {
-        await run(supabase.from("user_mass_layout_items").update({ display_name: nextName }).eq("id", current.id));
-      }
+      if (nextName !== (current.display_name ?? null)) patch.display_name = nextName;
+      if (item.sort_order !== (current.sort_order ?? 0)) patch.sort_order = item.sort_order;
+      if (Object.keys(patch).length) await run(supabase.from("user_mass_layout_items").update(patch).eq("id", current.id));
     }
   }
 

@@ -1,5 +1,7 @@
 import { t } from "../i18n.js";
 import { h, actionMenu, confirmDialog, createDialog, errorMessage, notify, setBusy } from "../ui.js";
+import { connectPlan, insertInOrder, moveItem, partNumber, sortedParts, withOrder } from "../music-parts.js";
+import { formatLongDate, formatTime, todayIso } from "../format.js";
 
 // Music items are shown in Latin; Korean and English names stay in the data for search.
 export function roleLabel(role) {
@@ -7,10 +9,13 @@ export function roleLabel(role) {
   return role.name_la || role.name_en || role.name_ko || "";
 }
 
-// Checklist of the 18 fixed music items (Latin names). selected: Map(role_id -> display_name|null)
-// Rows use the same column grid as the Mass music list: check | number | role | name.
+// Music Parts editor: the official candidates (Latin names, official numbers) and, below them, the chosen
+// parts in the member's order, numbered 1..n. selected: Map(role_id -> display_name|null) in that order.
+// Candidate rows use the same column grid as the Mass music list: check | number | role | name.
 export function roleChecklist(roles, { selected = new Map(), locked = new Set(), labels = {} } = {}) {
   const text = { hint: "roles.hint", selectAll: "roles.selectAll", clearAll: "roles.clearAll", ...labels };
+  const roleById = new Map(roles.map((role) => [role.id, role]));
+  let order = [];
   const rows = roles.map((role) => {
     const isLocked = locked.has(role.id);
     const primary = roleLabel(role);
@@ -31,7 +36,10 @@ export function roleChecklist(roles, { selected = new Map(), locked = new Set(),
     nameInput.disabled = !checkbox.checked;
     checkbox.addEventListener("change", () => {
       nameInput.disabled = !checkbox.checked;
+      order = checkbox.checked ? insertInOrder(order, role.id, roleById) : order.filter((id) => id !== role.id);
+      renderOrder();
     });
+    nameInput.addEventListener("input", () => renderOrder());
     const element = h(
       "div",
       { class: checkbox.checked ? "role-row" : "role-row is-off" },
@@ -44,10 +52,74 @@ export function roleChecklist(roles, { selected = new Map(), locked = new Set(),
     checkbox.addEventListener("change", () => element.classList.toggle("is-off", !checkbox.checked));
     return { role, checkbox, nameInput, element };
   });
+  const rowById = new Map(rows.map((row) => [row.role.id, row]));
+  const shownName = (id) => rowById.get(id).nameInput.value.trim() || roleLabel(roleById.get(id));
+
+  const orderList = h("ol", { class: "parts-order-list" });
+  const orderEmpty = h("p", { class: "empty", text: t("parts.orderEmpty") });
+  const orderCount = h("span", { class: "parts-order-count" });
+  const announcer = h("p", { class: "visually-hidden", "aria-live": "polite" });
+
+  function move(index, step) {
+    const id = order[index];
+    order = moveItem(order, index, step);
+    renderOrder();
+    const at = order.indexOf(id);
+    announcer.textContent = t("parts.moved", { name: shownName(id), number: at + 1 });
+    const buttons = orderList.children[at]?.querySelectorAll("button") ?? [];
+    const wanted = buttons[step < 0 ? 0 : 1];
+    (wanted && !wanted.disabled ? wanted : [...buttons].find((button) => !button.disabled))?.focus();
+  }
+
+  function renderOrder() {
+    orderCount.textContent = t("parts.selectedCount", { count: order.length });
+    orderEmpty.hidden = order.length > 0;
+    orderList.replaceChildren(
+      ...order.map((id, index) => {
+        const name = shownName(id);
+        const official = roleLabel(roleById.get(id));
+        return h("li", { class: "parts-order-row" },
+          h("span", { class: "music-no num", text: partNumber(index) }),
+          h("span", { class: "parts-order-name", translate: "no" },
+            name,
+            name !== official ? h("small", { text: official }) : null
+          ),
+          h("button", {
+            type: "button",
+            class: "icon-button",
+            disabled: index === 0,
+            "aria-label": t("parts.moveUp", { name }),
+            onclick: () => move(index, -1)
+          }, "↑"),
+          h("button", {
+            type: "button",
+            class: "icon-button",
+            disabled: index === order.length - 1,
+            "aria-label": t("parts.moveDown", { name }),
+            onclick: () => move(index, 1)
+          }, "↓")
+        );
+      })
+    );
+  }
+
+  function applySelection(map) {
+    const wanted = [...map.keys()].filter((id) => rowById.has(id));
+    for (const row of rows) {
+      if (row.checkbox.disabled) continue;
+      row.checkbox.checked = map.has(row.role.id);
+      row.nameInput.value = map.get(row.role.id) ?? "";
+      row.nameInput.disabled = !row.checkbox.checked;
+      row.element.classList.toggle("is-off", !row.checkbox.checked);
+    }
+    order = wanted;
+    for (const id of locked) if (rowById.has(id) && !order.includes(id)) order = insertInOrder(order, id, roleById);
+    renderOrder();
+  }
 
   function setAll(checked) {
     for (const row of rows) {
-      if (row.checkbox.disabled) continue;
+      if (row.checkbox.disabled || row.checkbox.checked === checked) continue;
       row.checkbox.checked = checked;
       row.checkbox.dispatchEvent(new Event("change"));
     }
@@ -55,40 +127,259 @@ export function roleChecklist(roles, { selected = new Map(), locked = new Set(),
 
   const element = h(
     "div",
-    { class: "role-checklist" },
-    h("div", { class: "role-tools" },
-      h("span", { class: "hint", text: text.hint ? t(text.hint) : "" }),
-      h("button", { type: "button", class: "link-button", onclick: () => setAll(true) }, t(text.selectAll)),
-      h("button", { type: "button", class: "link-button", onclick: () => setAll(false) }, t(text.clearAll))
+    { class: "parts-editor" },
+    h("div", { class: "role-checklist" },
+      h("h3", { class: "parts-step", text: t("parts.candidatesHead", { count: roles.length }) }),
+      h("div", { class: "role-tools" },
+        h("span", { class: "hint", text: text.hint ? t(text.hint) : "" }),
+        h("button", { type: "button", class: "link-button", onclick: () => setAll(true) }, t(text.selectAll)),
+        h("button", { type: "button", class: "link-button", onclick: () => setAll(false) }, t(text.clearAll))
+      ),
+      rows.map((row) => row.element)
     ),
-    rows.map((row) => row.element)
+    h("section", { class: "parts-order" },
+      h("h3", { class: "parts-step" }, t("parts.orderHead"), orderCount),
+      h("p", { class: "hint", text: t("parts.orderHint") }),
+      orderEmpty,
+      orderList,
+      announcer
+    )
   );
+
+  applySelection(selected);
 
   return {
     element,
+    // Only the chosen parts, in the member's order, numbered 1..n.
     read() {
-      return rows
-        .filter((row) => row.checkbox.checked)
-        .map((row) => ({ role_id: row.role.id, display_name: row.nameInput.value.trim() || null }));
+      return withOrder(order.map((id) => ({ role_id: id, display_name: rowById.get(id).nameInput.value.trim() || null })));
     },
-    setSelection(map) {
-      for (const row of rows) {
-        if (row.checkbox.disabled) continue;
-        row.checkbox.checked = map.has(row.role.id);
-        row.nameInput.value = map.get(row.role.id) ?? "";
-        row.checkbox.dispatchEvent(new Event("change"));
-      }
-    }
+    setSelection: applySelection
   };
 }
 
-export function layoutSelection(layout) {
-  return new Map((layout?.user_mass_layout_items ?? []).map((item) => [item.role_id, item.display_name ?? ""]));
+// Final check before a selection is saved: the parts exactly as they will be numbered.
+export function confirmParts(items, roles, { title = t("parts.confirmTitle"), lead = t("parts.confirmLead"), confirmLabel = t("parts.saveConfiguration") } = {}) {
+  const roleById = new Map(roles.map((role) => [role.id, role]));
+  return new Promise((resolve) => {
+    const { body, footer, close, dialog } = createDialog(title);
+    let answer = false;
+    body.append(
+      h("p", { class: "sheet-message", text: lead }),
+      items.length
+        ? h("ol", { class: "parts-order-list is-preview" },
+            items.map((item, index) =>
+              h("li", { class: "parts-order-row" },
+                h("span", { class: "music-no num", text: partNumber(index) }),
+                h("span", { class: "parts-order-name", translate: "no", text: item.display_name || roleLabel(roleById.get(item.role_id)) })
+              )
+            )
+          )
+        : h("p", { class: "empty", text: t("parts.orderEmpty") })
+    );
+    footer.append(
+      h("button", { type: "button", class: "ghost-button", onclick: close }, t("parts.backToEdit")),
+      h("button", { type: "button", class: "solid-button", onclick: () => { answer = true; close(); } }, confirmLabel)
+    );
+    dialog.addEventListener("close", () => resolve(answer));
+  });
+}
+
+// A saved selection as Map(role_id -> display_name) in the member's order.
+export function layoutSelection(layout, roles = []) {
+  const roleById = new Map(roles.map((role) => [role.id, role]));
+  return new Map(sortedParts(layout?.user_mass_layout_items, roleById).map((item) => [item.role_id, item.display_name ?? ""]));
 }
 
 const NEW_LAYOUT = "new";
 // Remembered while the screen redraws after a save.
 let chosenLayoutId = null;
+let connectDate = null;
+
+const massName = (mass) => mass?.title?.trim() || t("mass.untitled");
+
+// Connects a saved selection to an existing Missa. With parts already there, the member chooses
+// Replace or Add; parts with linked Scores are never removed. The official list is not touched.
+function openConnect(ctx, layout, roles) {
+  const roleById = new Map(roles.map((role) => [role.id, role]));
+  const layoutItems = sortedParts(layout.user_mass_layout_items, roleById).map((item) => ({
+    role_id: item.role_id,
+    display_name: item.display_name ?? null
+  }));
+  const { body, footer, close, setStatus } = createDialog(t("connect.title", { name: layout.name }));
+  const dateId = "connect-date";
+  const dateInput = h("input", { id: dateId, type: "date", value: connectDate ?? todayIso() });
+  const massBox = h("div", { class: "connect-masses" });
+  const modeOptions = ["replace", "add"].map((value) => {
+    const input = h("input", { type: "radio", name: "connect-mode", value });
+    input.addEventListener("change", () => {
+      mode = value;
+      update();
+    });
+    return h("label", { class: "connect-option" },
+      input,
+      h("span", { class: "list-main" },
+        h("strong", { text: t(`connect.mode.${value}`) }),
+        h("span", { class: "meta", text: t(`connect.modeHint.${value}`) })
+      )
+    );
+  });
+  const modeBox = h("fieldset", { class: "connect-mode", hidden: true },
+    h("legend", { text: t("connect.modeLegend") }),
+    modeOptions
+  );
+  const preview = h("div", { class: "connect-preview", hidden: true });
+  const connectButton = h("button", { type: "button", class: "solid-button", disabled: true }, t("connect.connect"));
+  footer.append(h("button", { type: "button", class: "ghost-button", onclick: close }, t("common.cancel")), connectButton);
+  body.append(
+    h("div", { class: "field" }, h("label", { for: dateId, text: t("connect.dateLabel") }), dateInput),
+    massBox,
+    modeBox,
+    preview
+  );
+
+  let chosen = null;
+  let mode = null;
+  let token = 0;
+
+  function existingSlots() {
+    return (chosen?.mass_music_slots ?? []).map((slot) => ({
+      role_id: slot.role_id,
+      display_name: slot.display_name,
+      sort_order: slot.sort_order,
+      linked: (slot.mass_music_entries ?? []).length > 0
+    }));
+  }
+
+  function currentPlan() {
+    if (!chosen) return null;
+    const existing = existingSlots();
+    if (!existing.length) return connectPlan(existing, layoutItems, "replace", roleById);
+    return mode ? connectPlan(existing, layoutItems, mode, roleById) : null;
+  }
+
+  function update() {
+    modeBox.hidden = !chosen?.mass_music_slots?.length;
+    const plan = currentPlan();
+    const nothingNew = plan && mode === "add" && !plan.added.length;
+    connectButton.disabled = !plan || nothingNew;
+    preview.hidden = !plan;
+    if (!plan) {
+      preview.replaceChildren();
+      return;
+    }
+    preview.replaceChildren(
+      h("h3", { class: "parts-step", text: t("connect.previewHead") }),
+      h("ol", { class: "parts-order-list is-preview" },
+        plan.items.map((item, index) =>
+          h("li", { class: "parts-order-row" },
+            h("span", { class: "music-no num", text: partNumber(index) }),
+            h("span", { class: "parts-order-name", translate: "no", text: item.display_name || roleLabel(roleById.get(item.role_id)) })
+          )
+        )
+      ),
+      nothingNew ? h("p", { class: "hint", text: t("connect.nothingToAdd") }) : null,
+      plan.removed.length ? h("p", { class: "hint", text: t("connect.removedNote", { count: plan.removed.length }) }) : null,
+      plan.kept.length ? h("p", { class: "hint", text: t("connect.keptNote", { count: plan.kept.length }) }) : null
+    );
+  }
+
+  async function pick(id) {
+    const mine = ++token;
+    chosen = null;
+    mode = null;
+    for (const option of modeOptions) option.querySelector("input").checked = false;
+    update();
+    try {
+      const full = await ctx.db.mass(id);
+      if (mine !== token) return;
+      chosen = full;
+      update();
+    } catch (error) {
+      if (mine === token) setStatus(errorMessage(error, "connect.loadFailed"));
+    }
+  }
+
+  async function loadMasses() {
+    const mine = ++token;
+    chosen = null;
+    mode = null;
+    setStatus("");
+    update();
+    const date = dateInput.value;
+    if (!date) {
+      massBox.replaceChildren();
+      return;
+    }
+    connectDate = date;
+    massBox.replaceChildren(h("p", { class: "meta", text: t("common.loading") }));
+    try {
+      const masses = await ctx.db.massesOn(date);
+      if (mine !== token) return;
+      if (!masses.length) {
+        massBox.replaceChildren(h("p", { class: "empty", text: t("connect.noMasses") }));
+        return;
+      }
+      massBox.replaceChildren(
+        h("fieldset", { class: "connect-list" },
+          h("legend", { text: t("connect.chooseMass") }),
+          masses.map((mass) => {
+            const slots = mass.mass_music_slots ?? [];
+            const linked = slots.reduce((sum, slot) => sum + (slot.mass_music_entries?.length ?? 0), 0);
+            const input = h("input", { type: "radio", name: "connect-mass", value: mass.id });
+            input.addEventListener("change", () => pick(mass.id));
+            return h("label", { class: "connect-option" },
+              input,
+              h("span", { class: "time num", text: formatTime(mass.start_time) || t("calendar.noTime") }),
+              h("span", { class: "list-main" },
+                h("strong", { translate: "no", text: massName(mass) }),
+                h("span", { class: "meta", text: t("calendar.itemSummary", { items: slots.length, linked }) })
+              )
+            );
+          })
+        )
+      );
+    } catch (error) {
+      if (mine === token) massBox.replaceChildren(h("p", { class: "sheet-status", text: errorMessage(error, "connect.loadFailed") }));
+    }
+  }
+
+  function done(mass) {
+    body.replaceChildren(
+      h("p", { class: "sheet-message", text: t("connect.done", { title: massName(mass), date: formatLongDate(mass.local_date) }) })
+    );
+    footer.replaceChildren(
+      h("button", { type: "button", class: "ghost-button", onclick: close }, t("connect.doneButton")),
+      h("button", {
+        type: "button",
+        class: "solid-button",
+        onclick: () => {
+          close();
+          ctx.navigate(`#/mass/${mass.id}`);
+        }
+      }, t("connect.open"))
+    );
+  }
+
+  connectButton.addEventListener("click", async () => {
+    const plan = currentPlan();
+    if (!plan) return;
+    const target = chosen;
+    setBusy([connectButton], true);
+    setStatus("");
+    try {
+      await ctx.db.saveSlots(target.id, plan.items, target.mass_music_slots ?? []);
+      if (mode !== "add") await ctx.db.updateMass(target.id, { layout_id: layout.id });
+      done(target);
+    } catch (error) {
+      setStatus(errorMessage(error, "connect.failed", { slot_has_entries: "roles.locked" }));
+      setBusy([connectButton], false);
+    }
+  });
+
+  dateInput.addEventListener("change", loadMasses);
+  loadMasses();
+}
 
 const samePlaceName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
@@ -249,9 +540,16 @@ export async function renderLayouts(container, ctx) {
 
   function showChecklist() {
     checklist = roleChecklist(roles, {
-      selected: layout ? layoutSelection(layout) : new Map(roles.map((role) => [role.id, ""]))
+      selected: layout ? layoutSelection(layout, roles) : new Map(roles.map((role) => [role.id, ""]))
     });
     partsBox.replaceChildren(checklist.element);
+  }
+
+  // Unsaved changes in the editor (connecting always uses the saved selection).
+  function isDirty() {
+    if (!layout) return true;
+    const saved = withOrder([...layoutSelection(layout, roles)].map(([role_id, display_name]) => ({ role_id, display_name: display_name || null })));
+    return nameInput.value.trim() !== layout.name || JSON.stringify(saved) !== JSON.stringify(checklist.read());
   }
 
   function setStatus(message) {
@@ -264,11 +562,13 @@ export async function renderLayouts(container, ctx) {
     chosenLayoutId = layout?.id ?? NEW_LAYOUT;
     nameInput.value = layout?.name ?? "";
     deleteButton.hidden = !layout;
+    connectButton.hidden = !layout;
     setStatus("");
     showChecklist();
   });
 
-  const saveButton = h("button", { type: "button", class: "solid-button" }, t("layouts.save"));
+  const saveButton = h("button", { type: "button", class: "solid-button" }, t("parts.saveConfiguration"));
+  const connectButton = h("button", { type: "button", class: "ghost-button", hidden: !layout }, t("connect.button"));
   const deleteButton = h("button", { type: "button", class: "ghost-button is-danger", hidden: !layout }, t("layouts.delete"));
 
   saveButton.addEventListener("click", async () => {
@@ -278,17 +578,34 @@ export async function renderLayouts(container, ctx) {
       nameInput.focus();
       return;
     }
-    setBusy([saveButton, deleteButton], true);
+    const items = checklist.read();
+    if (!items.length) {
+      setStatus(t("layouts.partsRequired"));
+      return;
+    }
     setStatus("");
+    if (!(await confirmParts(items, roles, { lead: t("layouts.confirmLead", { name }) }))) return;
+    setBusy([saveButton, connectButton, deleteButton], true);
     try {
-      if (layout) await ctx.db.updateLayout(layout, name, checklist.read());
-      else chosenLayoutId = await ctx.db.createLayout(name, checklist.read());
+      if (layout) await ctx.db.updateLayout(layout, name, items);
+      else chosenLayoutId = await ctx.db.createLayout(name, items);
       notify(t("layouts.saved"), "success");
       ctx.refresh();
     } catch (error) {
       setStatus(errorMessage(error, "layouts.saveFailed"));
-      setBusy([saveButton, deleteButton], false);
+      setBusy([saveButton, connectButton, deleteButton], false);
     }
+  });
+
+  connectButton.addEventListener("click", () => {
+    if (!layout) return;
+    if (isDirty()) {
+      setStatus(t("connect.saveFirst"));
+      saveButton.focus();
+      return;
+    }
+    setStatus("");
+    openConnect(ctx, layout, roles);
   });
 
   deleteButton.addEventListener("click", async () => {
@@ -325,7 +642,7 @@ export async function renderLayouts(container, ctx) {
       h("p", { class: "hint", text: t("layouts.lead") }),
       h("div", { class: "layout-parts" }, h("h2", { text: t("layouts.partes") }), partsBox),
       status,
-      h("div", { class: "layout-actions" }, saveButton, deleteButton)
+      h("div", { class: "layout-actions" }, saveButton, connectButton, deleteButton)
     ),
     placesSection(ctx, places, layouts)
   );

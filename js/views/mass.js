@@ -9,14 +9,14 @@ import {
   colorSwatch,
   massLiturgyTitle,
   observanceTitle,
-  sortBySlotNo,
   todayIso,
   weekdayIndex,
   weekdayName
 } from "../format.js";
 import { countsAsPlayed, entryPlayed, playedEntries } from "../played.js";
 import { h, actionMenu, createDialog, confirmDialog, errorMessage, notify, setBusy, colorDot, displayScoreTitle } from "../ui.js";
-import { roleChecklist, layoutSelection, roleLabel } from "./layouts.js";
+import { roleChecklist, layoutSelection, roleLabel, confirmParts } from "./layouts.js";
+import { partNumber, sortedParts } from "../music-parts.js";
 import {
   deletionGroups,
   firstOccurrenceOn,
@@ -214,12 +214,16 @@ export function openMassForm(
       return;
     }
     const layout = knownLayouts.find((item) => item.id === layoutSelect.value);
-    checklist.setSelection(layout ? layoutSelection(layout) : everyItem());
+    checklist.setSelection(layout ? layoutSelection(layout, roles) : everyItem());
   });
 
   // A layout made here is kept in the list, so a retry after an error does not create it twice.
   function rememberLayout(id, name, items) {
-    knownLayouts.push({ id, name, user_mass_layout_items: items.map((item) => ({ role_id: item.role_id, display_name: item.display_name })) });
+    knownLayouts.push({
+      id,
+      name,
+      user_mass_layout_items: items.map((item) => ({ role_id: item.role_id, display_name: item.display_name, sort_order: item.sort_order }))
+    });
     layoutSelect.insertBefore(h("option", { value: id }, name), newOption);
     layoutSelect.value = id;
     layoutNameField.hidden = true;
@@ -398,7 +402,7 @@ export function openMassForm(
             await ctx.db.updateMass(mass.id, { ...fields, ...patch, series_locked: false });
             const layout = knownLayouts.find((item) => item.id === layoutSelect.value);
             const items = layout
-              ? [...layoutSelection(layout)].map(([role_id, display_name]) => ({ role_id, display_name: display_name || null }))
+              ? [...layoutSelection(layout, roles)].map(([role_id, display_name]) => ({ role_id, display_name: display_name || null }))
               : [];
             await ctx.db.syncSeriesMasses(series.id, scope === "all" ? null : mass.local_date, patch, items);
             if (weekdayChanged) {
@@ -460,18 +464,20 @@ export function openMassForm(
 }
 
 function openItemsEditor(ctx, mass, roles) {
-  const slots = mass.mass_music_slots ?? [];
+  const slots = sortedParts(mass.mass_music_slots, new Map(roles.map((role) => [role.id, role])));
   const selected = new Map(slots.map((slot) => [slot.role_id, slot.display_name ?? ""]));
   const locked = new Set(slots.filter((slot) => slot.mass_music_entries.length).map((slot) => slot.role_id));
   const { body, footer, close, setStatus } = createDialog(t("mass.itemsEditTitle"), { wide: true });
   const checklist = roleChecklist(roles, { selected, locked });
   body.append(h("p", { class: "hint", text: t("mass.itemsEditHint") }), checklist.element);
-  const saveButton = h("button", { type: "button", class: "solid-button" }, t("common.save"));
+  const saveButton = h("button", { type: "button", class: "solid-button" }, t("parts.saveConfiguration"));
   footer.append(h("button", { type: "button", class: "ghost-button", onclick: close }, t("common.cancel")), saveButton);
   saveButton.addEventListener("click", async () => {
+    const items = checklist.read();
+    if (!(await confirmParts(items, roles))) return;
     setBusy([saveButton], true);
     try {
-      await ctx.db.saveSlots(mass.id, checklist.read(), slots);
+      await ctx.db.saveSlots(mass.id, items, slots);
       close();
       notify(t("mass.itemsSaved"), "success");
       ctx.refresh();
@@ -771,7 +777,7 @@ export async function renderMass(container, ctx, { id }) {
     return;
   }
   const roleById = new Map(roles.map((role) => [role.id, role]));
-  const slots = sortBySlotNo(mass.mass_music_slots ?? [], (slot) => roleById.get(slot.role_id)?.slot_no ?? 99);
+  const slots = sortedParts(mass.mass_music_slots, roleById);
 
   const layout = layouts.find((item) => item.id === mass.layout_id) ?? null;
 
@@ -825,9 +831,9 @@ export async function renderMass(container, ctx, { id }) {
   const past = countsAsPlayed(mass, today);
 
   // One row per linked score. Extra scores of the same item reuse the grid with empty number/role cells.
-  const musicRows = slots.flatMap((slot) => {
+  const musicRows = slots.flatMap((slot, index) => {
     const role = roleById.get(slot.role_id);
-    const number = String((role?.slot_no ?? 0) + 1).padStart(2, "0");
+    const number = partNumber(index);
     const itemName = slot.display_name || roleLabel(role) || t("mass.unnamedItem");
     const entries = slot.mass_music_entries ?? [];
     const slotActions = [
