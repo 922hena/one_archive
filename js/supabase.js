@@ -1,7 +1,7 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 import { loginUrl } from "./return-to.js";
 
-export const SCORE_BUCKET = "scores";
+export { SCORE_BUCKET } from "./upload-prepared.js";
 export const LOGIN_PAGE = "schedule.html";
 
 function looksLikeSecretKey(key) {

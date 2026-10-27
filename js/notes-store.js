@@ -2,6 +2,7 @@
 // Original score files are never changed: notes are a separate layer, one record per file page.
 
 import { sanitizeStrokes } from "./annotations.js";
+import { scopedName } from "./storage-scope.js";
 
 const DB_NAME = "yearscore-notes";
 const STORE = "pages";
@@ -12,7 +13,7 @@ function openDb() {
       reject(new Error("IndexedDB is not available."));
       return;
     }
-    const request = indexedDB.open(DB_NAME, 1);
+    const request = indexedDB.open(scopedName(DB_NAME), 1);
     request.onupgradeneeded = () => request.result.createObjectStore(STORE);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);

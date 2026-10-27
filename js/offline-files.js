@@ -1,6 +1,8 @@
 // Score files kept on this device (IndexedDB) so they open without downloading again.
 // Best effort: every read falls back to "not saved", and nothing here touches the server.
 
+import { scopedName } from "./storage-scope.js";
+
 const DB_NAME = "yearscore-offline";
 const STORE = "files";
 
@@ -10,7 +12,7 @@ function openDb() {
       reject(new Error("IndexedDB is not available."));
       return;
     }
-    const request = indexedDB.open(DB_NAME, 1);
+    const request = indexedDB.open(scopedName(DB_NAME), 1);
     request.onupgradeneeded = () => request.result.createObjectStore(STORE);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);

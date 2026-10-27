@@ -1,5 +1,4 @@
-import { SCORE_BUCKET } from "./supabase.js";
-import { CACHE_SECONDS } from "./upload-prepared.js";
+import { CACHE_SECONDS, SCORE_BUCKET } from "./upload-prepared.js";
 
 export const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const STALE_UPLOAD_MS = 15 * 60 * 1000;

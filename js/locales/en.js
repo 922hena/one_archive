@@ -34,6 +34,15 @@ export default {
     logout: "Log out",
     logoutConfirm: "Log out? Other devices signed in to this account, such as a tablet, will also be logged out soon."
   },
+  demo: {
+    badge: "Demo",
+    note: "Try everything without an account. Your changes stay until you close this tab.",
+    reset: "Start over",
+    resetConfirm: "Start over? Everything you added or changed in this demo will be removed and the sample data comes back.",
+    signup: "Sign up",
+    notKept: "This browser has no room left for the demo. New changes will be lost when you refresh.",
+    startFailed: "Couldn't start the demo. Please refresh the page."
+  },
   common: {
     loading: "Loading…",
     save: "Save",

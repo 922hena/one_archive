@@ -2,7 +2,8 @@
 // Kept free of browser-only imports so tests/upload-prepared.test.mjs can run it with a fake client.
 // Original photos never reach this code: the PDF is built on the device first.
 
-const BUCKET = "scores";
+export const SCORE_BUCKET = "scores";
+const BUCKET = SCORE_BUCKET;
 // Paths are never reused (new UUID per file, no upsert), so browsers may keep files for a year.
 export const CACHE_SECONDS = "31536000";
 export const MAX_PDF_UPLOAD_BYTES = 20 * 1024 * 1024;

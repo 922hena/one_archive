@@ -1,6 +1,8 @@
 // Device-only holding place for a Score that is made but not yet uploaded (final PDF + thumbnail).
 // It lets a failed or interrupted upload continue later. Original photos are never kept here or on the server.
 
+import { scopedName } from "./storage-scope.js";
+
 const DB_NAME = "yearscore-uploads";
 const STORE = "drafts";
 
@@ -10,7 +12,7 @@ function open() {
       reject(new Error("indexeddb_unavailable"));
       return;
     }
-    const request = indexedDB.open(DB_NAME, 1);
+    const request = indexedDB.open(scopedName(DB_NAME), 1);
     request.onupgradeneeded = () => {
       const store = request.result.createObjectStore(STORE, { keyPath: "scoreId" });
       store.createIndex("userId", "userId");

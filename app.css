@@ -877,6 +877,14 @@ button.music-title:hover { text-decoration: underline; text-underline-offset: 3p
 .add-mass { margin-top: 8px; }
 .add-mass .list-row { min-height: 52px; padding: 4px 2px; }
 
+/* demo page (demo.html) */
+.demo-badge { display: inline-flex; align-items: center; height: 24px; margin-left: -8px; padding: 0 8px; border: 1px solid var(--oa-line); border-radius: 12px; color: var(--oa-text); font-size: 12px; line-height: 16px; font-weight: 600; white-space: nowrap; }
+.demo-signup { color: var(--oa-black); font-weight: 600; }
+.demo-note { margin: 0; padding: 10px 24px; border-bottom: 1px solid var(--oa-line); background: var(--oa-subtle); color: var(--oa-text); font-size: 13px; line-height: 20px; }
+@media (min-width: 1200px) {
+  .demo-note { margin-left: var(--sidebar-width); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }

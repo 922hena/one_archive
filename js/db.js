@@ -1,5 +1,4 @@
-import { SCORE_BUCKET } from "./supabase.js";
-import { CACHE_SECONDS } from "./upload-prepared.js";
+import { CACHE_SECONDS, SCORE_BUCKET } from "./upload-prepared.js";
 import { compareMasses, todayIso } from "./format.js";
 import { comparePages } from "./pages.js";
 import { liturgyFields, needsLiturgyRefresh, occurrenceDates, occurrenceWindow } from "./recurrence.js";
