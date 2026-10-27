@@ -21,7 +21,7 @@ export default {
     search: "Search",
     searchHint: "Scores",
     musicParts: "Music Parts",
-    musicPartsHint: "Choose, order and connect to a date"
+    musicPartsHint: "Choose parts and connect to a date"
   },
   nav: {
     home: "Calendar",
@@ -36,7 +36,7 @@ export default {
   },
   demo: {
     badge: "Demo",
-    note: "Try everything without an account. Your changes stay until you close this tab.",
+    note: "Try everything without an account. Your changes stay until you close this tab. Sample scores are placeholders for the demo — not the actual music.",
     reset: "Start over",
     resetConfirm: "Start over? Everything you added or changed in this demo will be removed and the sample data comes back.",
     signup: "Sign up",
@@ -71,7 +71,7 @@ export default {
     unknown: "Liturgy not confirmed",
     unknownHint: "This date has not been checked against the official liturgical calendar yet. You can enter it yourself or leave it empty.",
     sourcePrefix: "Source:",
-    sourceName: "매일미사(한국천주교주교회의)",
+    sourceName: "Catholic Bishops' Conference of Korea",
     colorAbbr: {
       green: "녹",
       white: "백",
@@ -262,7 +262,7 @@ export default {
     noItems: "No music parts. Turn some on in “Select Parts”.",
     officialName: "Official name: {name}",
     itemsEditTitle: "Select Parts",
-    itemsEditHint: "Changes to parts, names and order apply here only. Saved selections and the official list stay as they are.",
+    itemsEditHint: "Changes to parts and names apply here only. Saved selections and the official list stay as they are.",
     itemsSaved: "Music parts saved.",
     itemsSaveFailed: "Couldn't save the music parts.",
     newScore: "New Score",
@@ -332,16 +332,11 @@ export default {
   },
   parts: {
     candidatesHead: "Candidates ({count})",
-    orderHead: "Your order",
     selectedCount: "{count} selected",
-    orderHint: "Only these parts are saved, numbered 1, 2, 3 … in this order.",
     orderEmpty: "No parts selected.",
-    moveUp: "Move {name} up",
-    moveDown: "Move {name} down",
-    moved: "{name} is now number {number}.",
     saveConfiguration: "Save Configuration",
     confirmTitle: "Save Configuration",
-    confirmLead: "These parts will be saved in this order.",
+    confirmLead: "These parts will be saved.",
     backToEdit: "Back"
   },
   connect: {
@@ -357,8 +352,8 @@ export default {
       add: "Add"
     },
     modeHint: {
-      replace: "Use this configuration and its order. Parts with linked Scores stay, at the end.",
-      add: "Keep the current parts and add the missing ones at the end."
+      replace: "Use this configuration. Parts with linked Scores stay.",
+      add: "Keep the current parts and add the missing ones."
     },
     previewHead: "Result",
     nothingToAdd: "Every part is already there. Nothing changes.",
@@ -378,7 +373,7 @@ export default {
     choose: "Saved Parts",
     newOption: "+ New Selection",
     delete: "Delete Selection",
-    lead: "Choose the parts you use and put them in order. Saving does not change Missae you already made. To use it on a date, choose Connect to Missa.",
+    lead: "Choose the parts you use. They always follow the liturgical order. Saving does not change Missae you already made. To use it on a date, choose Connect to Missa.",
     new: "New Selection",
     newTitle: "New Selection",
     editTitle: "Edit Selection",
@@ -386,7 +381,7 @@ export default {
     namePlaceholder: "e.g. Sunday",
     nameRequired: "Enter a selection name.",
     partsRequired: "Choose at least one part.",
-    confirmLead: "‘{name}’ will be saved with these parts, in this order.",
+    confirmLead: "‘{name}’ will be saved with these parts.",
     items: "Music parts",
     itemCount: "Parts: {count}",
     updatedAt: "Last edited {at}",

@@ -7,7 +7,7 @@ function roleName(role) {
   return role.name_la || role.name_en || role.name_ko || "";
 }
 
-// Songs in the order of the Missa: the member's Music Parts order, then link order. A song's number is
+// Songs in the order of the Missa: the official Music Parts order, then link order. A song's number is
 // its part's place in that Missa (1..n), the same number the Missa screen shows.
 // Links whose score has no file are left out, because there is nothing to show.
 export function setlistFromMass(mass, roles = []) {

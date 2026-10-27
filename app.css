@@ -660,23 +660,16 @@ button.music-title:hover { text-decoration: underline; text-underline-offset: 3p
   .role-lock { margin-left: 0; }
 }
 
-/* Music Parts editor: candidates, then the chosen parts numbered 1..n */
+/* Music Parts editor: the official candidates in the official order; previews number the chosen parts 1..n */
 .parts-editor { display: grid; gap: 24px; }
 .parts-step { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; font-size: 15px; line-height: 22px; font-weight: 600; color: var(--oa-black); }
-.parts-order-count { font-size: 12px; font-weight: 500; color: var(--muted); }
-.parts-order > .hint { margin: 0 0 8px; }
-.parts-order .empty { margin: 0; padding: 12px 0; border-top: 1px solid var(--oa-line); }
+.parts-count { font-size: 12px; font-weight: 500; color: var(--muted); }
 .parts-order-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--oa-line); }
 .parts-order-row {
-  display: grid; grid-template-columns: 28px minmax(0, 1fr) 44px 44px; column-gap: 8px; align-items: center;
+  display: grid; grid-template-columns: 28px minmax(0, 1fr); column-gap: 8px; align-items: center;
   min-height: 48px; padding: 2px 0; border-bottom: 1px solid var(--oa-line); font-variant-numeric: tabular-nums;
 }
-.parts-order-list.is-preview .parts-order-row { grid-template-columns: 28px minmax(0, 1fr); }
 .parts-order-name { min-width: 0; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--oa-text); overflow-wrap: anywhere; }
-.parts-order-name small { display: block; font-size: 12px; line-height: 18px; font-weight: 400; color: var(--muted); }
-.parts-order-row .icon-button { border-color: transparent; font-size: 16px; }
-.parts-order-row .icon-button:hover:not(:disabled) { background: var(--oa-subtle); }
-.parts-order-row .icon-button:disabled { color: var(--oa-muted); opacity: 0.4; cursor: default; }
 .sheet-message + .parts-order-list { margin-top: 16px; }
 .connect-masses { margin-top: 16px; }
 .connect-list, .connect-mode { margin: 0; padding: 0; border: 0; min-width: 0; }
@@ -691,10 +684,6 @@ button.music-title:hover { text-decoration: underline; text-underline-offset: 3p
 .connect-option .list-main { display: flex; flex-direction: column; min-width: 0; }
 .connect-preview { margin-top: 20px; }
 .connect-preview .hint { margin: 8px 0 0; }
-@media (min-width: 1024px) {
-  .layout-card .parts-editor { grid-template-columns: minmax(0, 3fr) minmax(280px, 2fr); gap: 32px; align-items: start; }
-  .layout-card .parts-order { position: sticky; top: 24px; }
-}
 
 /* dialogs and tables */
 .sheet { border: 1px solid var(--oa-line); border-radius: var(--radius-card); box-shadow: 0 8px 32px rgba(11, 11, 13, 0.12); }

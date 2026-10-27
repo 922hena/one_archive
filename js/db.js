@@ -104,7 +104,7 @@ export function createDb(supabase) {
     return row;
   }
 
-  // items come in the member's order; their place becomes sort_order (1, 2, 3 ...).
+  // items come in the official order; their place becomes sort_order (1, 2, 3 ...).
   async function createMass(fields, items) {
     const created = await run(supabase.from("mass_events").insert(fields).select("id").single());
     if (items.length) {
@@ -327,7 +327,7 @@ export function createDb(supabase) {
     await deleteMasses(targets.map((item) => item.id));
   }
 
-  // wanted: the Missa's Music Parts in the member's order. Items with linked scores are never removed.
+  // wanted: the Missa's Music Parts in the official order. Items with linked scores are never removed.
   async function saveSlots(massId, wanted, existing) {
     wanted = wanted.map((item, index) => ({ ...item, sort_order: item.sort_order ?? index + 1 }));
     const wantedByRole = new Map(wanted.map((item) => [item.role_id, item]));
@@ -367,7 +367,7 @@ export function createDb(supabase) {
     }
   }
 
-  // A saved selection's items in the member's order (older rows without an order follow the official order).
+  // A saved selection's items in the official order.
   function layoutItemsInOrder(layout) {
     return sortedParts(layout?.user_mass_layout_items, new Map((rolesCache ?? []).map((role) => [role.id, role])));
   }

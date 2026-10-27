@@ -1,6 +1,6 @@
 import { t } from "../i18n.js";
 import { h, actionMenu, confirmDialog, createDialog, errorMessage, notify, setBusy } from "../ui.js";
-import { connectPlan, insertInOrder, moveItem, partNumber, sortedParts, withOrder } from "../music-parts.js";
+import { connectPlan, partNumber, sortedParts, withOrder } from "../music-parts.js";
 import { formatLongDate, formatTime, todayIso } from "../format.js";
 
 // Music items are shown in Latin; Korean and English names stay in the data for search.
@@ -9,13 +9,11 @@ export function roleLabel(role) {
   return role.name_la || role.name_en || role.name_ko || "";
 }
 
-// Music Parts editor: the official candidates (Latin names, official numbers) and, below them, the chosen
-// parts in the member's order, numbered 1..n. selected: Map(role_id -> display_name|null) in that order.
+// Music Parts editor: the official candidates (Latin names, official numbers) in the official order.
+// The chosen parts are saved in that order, numbered 1..n. selected: Map(role_id -> display_name|null).
 // Candidate rows use the same column grid as the Mass music list: check | number | role | name.
 export function roleChecklist(roles, { selected = new Map(), locked = new Set(), labels = {} } = {}) {
   const text = { hint: "roles.hint", selectAll: "roles.selectAll", clearAll: "roles.clearAll", ...labels };
-  const roleById = new Map(roles.map((role) => [role.id, role]));
-  let order = [];
   const rows = roles.map((role) => {
     const isLocked = locked.has(role.id);
     const primary = roleLabel(role);
@@ -36,10 +34,8 @@ export function roleChecklist(roles, { selected = new Map(), locked = new Set(),
     nameInput.disabled = !checkbox.checked;
     checkbox.addEventListener("change", () => {
       nameInput.disabled = !checkbox.checked;
-      order = checkbox.checked ? insertInOrder(order, role.id, roleById) : order.filter((id) => id !== role.id);
-      renderOrder();
+      renderCount();
     });
-    nameInput.addEventListener("input", () => renderOrder());
     const element = h(
       "div",
       { class: checkbox.checked ? "role-row" : "role-row is-off" },
@@ -52,59 +48,14 @@ export function roleChecklist(roles, { selected = new Map(), locked = new Set(),
     checkbox.addEventListener("change", () => element.classList.toggle("is-off", !checkbox.checked));
     return { role, checkbox, nameInput, element };
   });
-  const rowById = new Map(rows.map((row) => [row.role.id, row]));
-  const shownName = (id) => rowById.get(id).nameInput.value.trim() || roleLabel(roleById.get(id));
+  const chosenRows = () => rows.filter((row) => row.checkbox.checked);
+  const selectedCount = h("span", { class: "parts-count" });
 
-  const orderList = h("ol", { class: "parts-order-list" });
-  const orderEmpty = h("p", { class: "empty", text: t("parts.orderEmpty") });
-  const orderCount = h("span", { class: "parts-order-count" });
-  const announcer = h("p", { class: "visually-hidden", "aria-live": "polite" });
-
-  function move(index, step) {
-    const id = order[index];
-    order = moveItem(order, index, step);
-    renderOrder();
-    const at = order.indexOf(id);
-    announcer.textContent = t("parts.moved", { name: shownName(id), number: at + 1 });
-    const buttons = orderList.children[at]?.querySelectorAll("button") ?? [];
-    const wanted = buttons[step < 0 ? 0 : 1];
-    (wanted && !wanted.disabled ? wanted : [...buttons].find((button) => !button.disabled))?.focus();
-  }
-
-  function renderOrder() {
-    orderCount.textContent = t("parts.selectedCount", { count: order.length });
-    orderEmpty.hidden = order.length > 0;
-    orderList.replaceChildren(
-      ...order.map((id, index) => {
-        const name = shownName(id);
-        const official = roleLabel(roleById.get(id));
-        return h("li", { class: "parts-order-row" },
-          h("span", { class: "music-no num", text: partNumber(index) }),
-          h("span", { class: "parts-order-name", translate: "no" },
-            name,
-            name !== official ? h("small", { text: official }) : null
-          ),
-          h("button", {
-            type: "button",
-            class: "icon-button",
-            disabled: index === 0,
-            "aria-label": t("parts.moveUp", { name }),
-            onclick: () => move(index, -1)
-          }, "↑"),
-          h("button", {
-            type: "button",
-            class: "icon-button",
-            disabled: index === order.length - 1,
-            "aria-label": t("parts.moveDown", { name }),
-            onclick: () => move(index, 1)
-          }, "↓")
-        );
-      })
-    );
+  function renderCount() {
+    selectedCount.textContent = t("parts.selectedCount", { count: chosenRows().length });
   }
 
   function applySelection(map) {
-    const wanted = [...map.keys()].filter((id) => rowById.has(id));
     for (const row of rows) {
       if (row.checkbox.disabled) continue;
       row.checkbox.checked = map.has(row.role.id);
@@ -112,9 +63,7 @@ export function roleChecklist(roles, { selected = new Map(), locked = new Set(),
       row.nameInput.disabled = !row.checkbox.checked;
       row.element.classList.toggle("is-off", !row.checkbox.checked);
     }
-    order = wanted;
-    for (const id of locked) if (rowById.has(id) && !order.includes(id)) order = insertInOrder(order, id, roleById);
-    renderOrder();
+    renderCount();
   }
 
   function setAll(checked) {
@@ -129,20 +78,13 @@ export function roleChecklist(roles, { selected = new Map(), locked = new Set(),
     "div",
     { class: "parts-editor" },
     h("div", { class: "role-checklist" },
-      h("h3", { class: "parts-step", text: t("parts.candidatesHead", { count: roles.length }) }),
+      h("h3", { class: "parts-step" }, t("parts.candidatesHead", { count: roles.length }), selectedCount),
       h("div", { class: "role-tools" },
         h("span", { class: "hint", text: text.hint ? t(text.hint) : "" }),
         h("button", { type: "button", class: "link-button", onclick: () => setAll(true) }, t(text.selectAll)),
         h("button", { type: "button", class: "link-button", onclick: () => setAll(false) }, t(text.clearAll))
       ),
       rows.map((row) => row.element)
-    ),
-    h("section", { class: "parts-order" },
-      h("h3", { class: "parts-step" }, t("parts.orderHead"), orderCount),
-      h("p", { class: "hint", text: t("parts.orderHint") }),
-      orderEmpty,
-      orderList,
-      announcer
     )
   );
 
@@ -150,9 +92,9 @@ export function roleChecklist(roles, { selected = new Map(), locked = new Set(),
 
   return {
     element,
-    // Only the chosen parts, in the member's order, numbered 1..n.
+    // Only the chosen parts, in the official order, numbered 1..n.
     read() {
-      return withOrder(order.map((id) => ({ role_id: id, display_name: rowById.get(id).nameInput.value.trim() || null })));
+      return withOrder(chosenRows().map((row) => ({ role_id: row.role.id, display_name: row.nameInput.value.trim() || null })));
     },
     setSelection: applySelection
   };
@@ -185,7 +127,7 @@ export function confirmParts(items, roles, { title = t("parts.confirmTitle"), le
   });
 }
 
-// A saved selection as Map(role_id -> display_name) in the member's order.
+// A saved selection as Map(role_id -> display_name) in the official order.
 export function layoutSelection(layout, roles = []) {
   const roleById = new Map(roles.map((role) => [role.id, role]));
   return new Map(sortedParts(layout?.user_mass_layout_items, roleById).map((item) => [item.role_id, item.display_name ?? ""]));

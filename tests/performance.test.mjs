@@ -34,17 +34,18 @@ test("without a saved order, songs follow the liturgical Music order, then the l
   assert.deepEqual(songs.map((song) => song.number), ["01", "02", "02", "03"]);
 });
 
-test("songs follow the member's order and are numbered by their place in the Missa", () => {
+test("songs keep the liturgical order even when saved sort_order says otherwise, numbered by place in the Missa", () => {
+  const withPsalm = [...roles, { id: "r-psalm", slot_no: 1, name_la: "Psalmus" }];
   const ordered = {
     mass_music_slots: [
       { ...mass.mass_music_slots[0], sort_order: 1 },
-      { id: "s4", role_id: "r-entrance-2", sort_order: 2, mass_music_entries: [] },
+      { id: "s4", role_id: "r-psalm", sort_order: 2, mass_music_entries: [] },
       { ...mass.mass_music_slots[1], sort_order: 3 },
       { ...mass.mass_music_slots[2], sort_order: 4 }
     ]
   };
-  const songs = setlistFromMass(ordered, roles);
-  assert.deepEqual(songs.map((song) => song.key), ["g1", "k1", "k2", "e1"]);
+  const songs = setlistFromMass(ordered, withPsalm);
+  assert.deepEqual(songs.map((song) => song.key), ["e1", "k1", "k2", "g1"]);
   // the empty part keeps its place, so numbers match the Missa screen
   assert.deepEqual(songs.map((song) => song.number), ["01", "03", "03", "04"]);
 });
