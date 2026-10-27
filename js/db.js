@@ -13,7 +13,13 @@ export const SEARCH_PAGE_SIZE = 50;
 
 const SCORE_FIELDS =
   "id,title,composer_name,provisional_title,status,created_at,last_edited_at," +
-  "composition_year,composition_year_approx,period_code,key_tonic,key_mode,key_text,note,thumbnail_path";
+  "composition_year,composition_year_approx,period_code,key_tonic,key_mode,key_text,note,thumbnail_path," +
+  "publisher,edition,scorebook,scorebook_page,physical_location,external_url,duration_seconds,difficulty";
+// Optional Score information (PRD RIGHT-001): typed text is trimmed (blank = none); the others are kept as given.
+const SCORE_TEXT_FIELDS = ["key_text", "note", "publisher", "edition", "scorebook", "scorebook_page", "physical_location", "external_url"];
+const SCORE_VALUE_FIELDS = [
+  "composition_year", "composition_year_approx", "period_code", "key_tonic", "key_mode", "duration_seconds", "difficulty"
+];
 const FILE_FIELDS = "id,storage_path,mime_type,byte_size,original_filename,page_no,created_at";
 const OBSERVANCE_FIELDS =
   "id,calendar_date,sort_order,name_ko,name_en,name_la,season_code,color_code,rank_code,source_url,verification_status";
@@ -39,6 +45,17 @@ function normalizeName(value) {
 function sortFiles(score) {
   if (Array.isArray(score?.score_files)) score.score_files.sort(comparePages);
   return score;
+}
+
+function optionalScoreFields(fields) {
+  const patch = {};
+  for (const name of SCORE_VALUE_FIELDS) {
+    if (name in fields) patch[name] = fields[name] ?? null;
+  }
+  for (const name of SCORE_TEXT_FIELDS) {
+    if (name in fields) patch[name] = normalizeName(fields[name]);
+  }
+  return patch;
 }
 
 export function createDb(supabase) {
@@ -453,6 +470,37 @@ export function createDb(supabase) {
     return rows.map(sortFiles);
   }
 
+  async function score(id) {
+    const row = await run(
+      supabase
+        .from("owned_scores")
+        .select(`${SCORE_FIELDS},score_files(${FILE_FIELDS}),mass_music_entries(id)`)
+        .eq("id", id)
+        .maybeSingle()
+    );
+    return row ? sortFiles(row) : null;
+  }
+
+  // "Save Score Information Only" (PRD RIGHT-001): a ready Score with no file. Nothing is stored in Storage.
+  async function createInfoScore(fields) {
+    const title = normalizeName(fields.title);
+    if (!title) throw codedError("title_required");
+    const created = await run(
+      supabase
+        .from("owned_scores")
+        .insert({
+          ...optionalScoreFields(fields),
+          title,
+          composer_name: normalizeName(fields.composer_name),
+          provisional_title: title,
+          status: "ready"
+        })
+        .select("id")
+        .single()
+    );
+    return created.id;
+  }
+
   function scoreUsage(scoreId) {
     return run(
       supabase
@@ -463,13 +511,11 @@ export function createDb(supabase) {
   }
 
   function updateScore(id, fields) {
-    const patch = { title: normalizeName(fields.title), composer_name: normalizeName(fields.composer_name) };
-    for (const name of ["composition_year", "composition_year_approx", "period_code", "key_tonic", "key_mode"]) {
-      if (name in fields) patch[name] = fields[name] ?? null;
-    }
-    for (const name of ["key_text", "note"]) {
-      if (name in fields) patch[name] = normalizeName(fields[name]);
-    }
+    const patch = {
+      title: normalizeName(fields.title),
+      composer_name: normalizeName(fields.composer_name),
+      ...optionalScoreFields(fields)
+    };
     return run(supabase.from("owned_scores").update(patch).eq("id", id));
   }
 
@@ -731,6 +777,8 @@ export function createDb(supabase) {
     updateLayout,
     deleteLayout,
     readyScores,
+    score,
+    createInfoScore,
     scoreUsage,
     updateScore,
     deleteScore,

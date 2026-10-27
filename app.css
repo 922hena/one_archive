@@ -861,6 +861,21 @@ button.music-title:hover { text-decoration: underline; text-underline-offset: 3p
   .history-score { grid-column: 1 / -1; }
 }
 
+/* Score Information Only (PRD RIGHT-001~005): a small neutral label, like the Missa "Not played" flag */
+.score-tag { display: inline-flex; align-items: center; align-self: flex-start; max-width: 100%; min-height: 20px; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 10px; font-size: 11px; line-height: 18px; font-weight: 600; color: var(--oa-text); overflow-wrap: anywhere; }
+.music-composer .score-tag { display: flex; width: fit-content; margin-top: 4px; }
+.result-main .score-tag { margin-top: 2px; }
+.preview-thumb .score-tag { align-self: center; justify-content: center; margin: 12px; text-align: center; }
+.info-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; padding-top: 10px; border-top: 1px solid var(--oa-line); }
+.info-choice .hint { margin: 0; }
+.info-lead { margin: 0 0 12px; }
+.info-only-head { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 0 0 16px; padding-bottom: 16px; border-bottom: 1px solid var(--oa-line); }
+.info-only-head .hint { margin: 0; }
+.more-details { margin: 4px 0 0; border-top: 1px solid var(--oa-line); }
+.more-details > summary { padding: 12px 0; cursor: pointer; font-size: 14px; line-height: 20px; font-weight: 600; color: var(--oa-black); }
+.more-details[open] > summary { margin-bottom: 4px; }
+.detail-link { overflow-wrap: anywhere; }
+
 .customize-list { margin: 8px 0 0; padding: 0; list-style: none; border-top: 1px solid var(--oa-line); }
 .customize-row { display: grid; grid-template-columns: minmax(0, 1fr) 44px 44px; gap: 4px; align-items: center; min-height: 48px; border-bottom: 1px solid var(--oa-line); }
 .add-mass { margin-top: 8px; }

@@ -14,7 +14,19 @@ import {
   weekdayName
 } from "../format.js";
 import { countsAsPlayed, entryPlayed, playedEntries } from "../played.js";
-import { h, actionMenu, createDialog, confirmDialog, errorMessage, notify, setBusy, colorDot, displayScoreTitle } from "../ui.js";
+import {
+  h,
+  actionMenu,
+  createDialog,
+  confirmDialog,
+  errorMessage,
+  notify,
+  setBusy,
+  colorDot,
+  displayScoreTitle,
+  hasScoreFile,
+  infoOnlyTag
+} from "../ui.js";
 import { roleChecklist, layoutSelection, roleLabel, confirmParts } from "./layouts.js";
 import { partNumber, sortedParts } from "../music-parts.js";
 import {
@@ -27,15 +39,16 @@ import {
   weeksAheadRange
 } from "../recurrence.js";
 import { isMissingRelation } from "../db.js";
-import { openUploadDialog } from "./library.js";
+import { openAttachFile, openScoreDetails, openUploadDialog } from "./library.js";
 import { openPerformance, openViewer } from "./viewer.js";
-import { setlistFromMass } from "../performance.js";
+import { linkedCount, setlistFromMass } from "../performance.js";
 
 // Opens every linked score of a Missa, in Music order. Opening is not a performance record (decision D1).
+// Information Only links have no pages, so they are left out.
 export function openMassPerformance(ctx, mass, roles) {
   const songs = setlistFromMass(mass, roles);
   if (!songs.length) {
-    notify(t("perform.noScores"), "error");
+    notify(t(linkedCount(mass) ? "perform.noFilesLinked" : "perform.noScores"), "error");
     return;
   }
   openPerformance(ctx, { title: massTitle(mass), songs });
@@ -524,7 +537,14 @@ async function openLinkPicker(ctx, slot, itemName) {
         return h("li", { class: "list-row" },
           h("div", { class: "list-main" },
             h("strong", { text: displayScoreTitle(score) }),
-            h("span", { class: "meta", text: [score.composer_name, t("mass.usedCount", { count: score.mass_music_entries?.length ?? 0 })].filter(Boolean).join(" · ") })
+            h("span", {
+              class: "meta",
+              text: [
+                score.composer_name,
+                t("mass.usedCount", { count: score.mass_music_entries?.length ?? 0 }),
+                hasScoreFile(score) ? null : t("library.infoOnly")
+              ].filter(Boolean).join(" · ")
+            })
           ),
           button
         );
@@ -851,9 +871,18 @@ export async function renderMass(container, ctx, { id }) {
     const blank = () => h("span", { class: "music-empty-cell", "aria-hidden": "true" });
     const rowFor = (entry, index) => {
       const score = entry?.owned_scores;
+      // Information Only: linked and counted like any Score, but there is no file to open or perform.
+      const withFile = hasScoreFile(score);
+      const openEntry = () => (withFile ? openViewer(ctx, score) : openScoreDetails(ctx, score));
+      const fileActions = withFile
+        ? [{ label: t("mass.openScore"), onSelect: openEntry }]
+        : [
+            { label: t("library.infoDetails"), onSelect: openEntry },
+            { label: t("library.attachFile"), onSelect: () => openAttachFile(ctx, score) }
+          ];
       const actions = entry
         ? [
-            { label: t("mass.openScore"), onSelect: () => openViewer(ctx, score) },
+            ...fileActions,
             past
               ? { label: t(entry.not_played_at ? "mass.markPlayed" : "mass.markNotPlayed"), onSelect: () => toggleNotPlayed(ctx, entry) }
               : null,
@@ -869,13 +898,14 @@ export async function renderMass(container, ctx, { id }) {
           : blank(),
         entry
           ? h("div", { class: "music-work", translate: "no" },
-              h("button", { type: "button", class: "music-title", onclick: () => openViewer(ctx, score) }, displayScoreTitle(score)),
-              score?.composer_name || (past && entry.not_played_at)
+              h("button", { type: "button", class: "music-title", onclick: openEntry }, displayScoreTitle(score)),
+              score?.composer_name || (past && entry.not_played_at) || !withFile
                 ? h("span", { class: "music-composer" },
                     score?.composer_name ? h("span", { text: score.composer_name }) : null,
                     past && entry.not_played_at
                       ? h("span", { class: "music-flag", translate: "yes", text: t("mass.notPlayedTag") })
-                      : null
+                      : null,
+                    withFile ? null : infoOnlyTag()
                   )
                 : null,
               entry.note ? h("span", { class: "music-note", text: entry.note }) : null

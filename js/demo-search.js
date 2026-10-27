@@ -134,11 +134,14 @@ export function searchPool(read, filters = {}) {
       key_mode: score.key_mode ?? null,
       key_text: score.key_text ?? null,
       note: score.note ?? null,
-      created_at: score.created_at
+      created_at: score.created_at,
+      text: [score.publisher, score.edition, score.scorebook, score.physical_location]
     }))
     .filter((score) => {
       if (q) {
-        const fields = [score.title, score.provisional_title, score.composer_label].map((value) => String(value ?? "").toLowerCase());
+        const fields = [score.title, score.provisional_title, score.composer_label, ...score.text].map((value) =>
+          String(value ?? "").toLowerCase()
+        );
         if (!fields.some((value) => value.includes(q))) return false;
       }
       if (composerIds || composerNames) {
@@ -152,7 +155,7 @@ export function searchPool(read, filters = {}) {
       if (keys && !keys.some((key) => key?.tonic === score.key_tonic && (key?.mode == null || key.mode === score.key_mode))) return false;
       return true;
     })
-    .map(({ composer_name, ...score }) => score);
+    .map(({ composer_name, text, ...score }) => score);
 }
 
 function countMet(n, cond) {
@@ -205,6 +208,7 @@ export function searchScores(read, params = {}, today) {
   const countCond = isObject(filters.count) ? filters.count : null;
   const extraCond = isObject(filters.extra_count) ? filters.extra_count : null;
   const extraVenues = list(extraCond?.venue_ids) ?? [];
+  const files = ["with", "without"].includes(filters.files) ? filters.files : null;
   const hasContext = Boolean(
     list(filters.seasons) || list(filters.observance_names) || list(filters.years) ||
     present(filters.year_from) || present(filters.year_to) || list(filters.months) ||
@@ -230,13 +234,13 @@ export function searchScores(read, params = {}, today) {
   }
 
   const scores = byId(read("owned_scores"));
-  const files = read("score_files").filter((file) => file.removed_at == null && (file.role ?? "page") === "page");
+  const pages = read("score_files").filter((file) => file.removed_at == null && (file.role ?? "page") === "page");
   const periodOrder = new Map(read("musical_periods").map((period) => [period.code, period.sort_order]));
 
   const matched = searchPool(read, filters)
     .map((score) => {
       const found = within.get(String(score.score_id));
-      const own = files
+      const own = pages
         .filter((file) => String(file.owned_score_id) === String(score.score_id))
         .sort((a, b) => a.page_no - b.page_no || compareText(a.created_at, b.created_at) || compareText(a.id, b.id));
       return {
@@ -254,7 +258,8 @@ export function searchScores(read, params = {}, today) {
     })
     .filter((row) => {
       const counted = countCond ? countMet(row.within_count, countCond) : hasContext ? row.within_count >= 1 : true;
-      return counted && (!extraCond || countMet(row.extra_count ?? 0, extraCond));
+      const fileMatch = !files || (files === "with") === row.file_count > 0;
+      return counted && (!extraCond || countMet(row.extra_count ?? 0, extraCond)) && fileMatch;
     });
 
   const primary = {

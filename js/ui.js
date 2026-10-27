@@ -171,3 +171,12 @@ export function colorDot(code, swatch) {
 export function displayScoreTitle(score) {
   return score?.title?.trim() || score?.provisional_title || t("library.untitled");
 }
+
+// A Score object (score_files) or a search row (file_count). Without a file there is nothing to open or perform.
+export function hasScoreFile(score) {
+  return Array.isArray(score?.score_files) ? score.score_files.length > 0 : Number(score?.file_count) > 0;
+}
+
+export function infoOnlyTag() {
+  return h("span", { class: "score-tag", text: t("library.infoOnly") });
+}

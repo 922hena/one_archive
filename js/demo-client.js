@@ -33,7 +33,8 @@ const DEFAULTS = {
   owned_scores: {
     title: null, composer_name: null, status: "uploading", work_id: null, composer_id: null, composition_year: null,
     composition_year_approx: false, period_code: null, key_tonic: null, key_mode: null, key_text: null, note: null,
-    thumbnail_path: null, last_edited_at: true
+    thumbnail_path: null, last_edited_at: true, publisher: null, edition: null, scorebook: null, scorebook_page: null,
+    physical_location: null, external_url: null, duration_seconds: null, difficulty: null
   },
   score_files: { original_filename: null, page_no: 1, role: "page", removed_at: null },
   mass_music_entries: { sort_order: 0, not_played_at: null, note: null },
@@ -51,7 +52,8 @@ const NO_ID = new Set(["mass_series_skips"]);
 const TIME_COLUMNS = ["start_time"];
 const SCORE_EDIT_FIELDS = [
   "title", "composer_name", "composer_id", "composition_year", "composition_year_approx", "period_code",
-  "key_tonic", "key_mode", "key_text", "note"
+  "key_tonic", "key_mode", "key_text", "note", "publisher", "edition", "scorebook", "scorebook_page",
+  "physical_location", "external_url", "duration_seconds", "difficulty"
 ];
 
 // parent table -> embedded table -> join. one: parent column pointing at the target id; many: target column pointing at the parent id.

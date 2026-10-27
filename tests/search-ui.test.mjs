@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { countsAsPlayed, entryPlayed, playedEntries } from "../js/played.js";
-import { parseKeyText, periodForYear, scorePeriod, tonicLabel } from "../js/score-meta.js";
+import { formatDuration, isWebLink, parseDuration, parseKeyText, periodForYear, scorePeriod, tonicLabel } from "../js/score-meta.js";
 import {
   clearFilter,
   countSummary,
@@ -81,6 +81,23 @@ test("period: member choice, then composition year, then provisional composer pe
   assert.deepEqual(scorePeriod({}, PERIODS), { code: null, provisional: false });
 });
 
+test("Score information: duration and link follow the database limits", () => {
+  assert.deepEqual(parseDuration(""), { ok: true, value: null });
+  assert.deepEqual(parseDuration("4:30"), { ok: true, value: 270 });
+  assert.deepEqual(parseDuration(" 12 "), { ok: true, value: 720 });
+  assert.equal(parseDuration("4:75").ok, false);
+  assert.equal(parseDuration("0").ok, false);
+  assert.equal(parseDuration("601").ok, false, "at most 600 minutes");
+  assert.equal(parseDuration("abc").ok, false);
+  assert.equal(formatDuration(270), "4:30");
+  assert.equal(formatDuration(null), "");
+  assert.equal(isWebLink("https://imslp.org/wiki/Ave_verum_corpus"), true);
+  assert.equal(isWebLink("http://example.org"), true);
+  assert.equal(isWebLink("javascript:alert(1)"), false);
+  assert.equal(isWebLink("www.example.org"), false);
+  assert.equal(isWebLink("https://exa mple.org"), false);
+});
+
 test("count conditions are read safely", () => {
   assert.deepEqual(parseCount("eq:0"), { op: "eq", value: 0 });
   assert.deepEqual(parseCount("gte:2"), { op: "gte", value: 2 });
@@ -114,6 +131,7 @@ test("search address round trip keeps every condition, sort and view", () => {
     parts: [role],
     count: { op: "eq", value: 1 },
     extra: { scope: "venue", venues: [venue], cond: { op: "gte", value: 2 } },
+    files: "without",
     sort: "count",
     desc: true,
     view: "notes"
@@ -135,6 +153,19 @@ test("unsafe or unknown address values are dropped", () => {
   assert.equal(state.sort, null);
   assert.equal(state.view, null);
   assert.equal(state.count, null);
+  assert.equal(parseSearchQuery("f=pdf-only").files, null);
+});
+
+test("the score file filter goes to Scores search only and clears on its own", () => {
+  const state = { ...emptySearch(), files: "without", composers: ["Bach"] };
+  assert.equal(isFilterActive(state, "files"), true);
+  assert.equal(searchFilters(state).files, "without");
+  assert.equal(searchFilters({ ...state, target: "history" }).files, undefined);
+  assert.equal(hasContext(state), false, "file presence is not Missa context");
+  const next = clearFilter(state, "files");
+  assert.equal(next.files, null);
+  assert.deepEqual(next.composers, ["Bach"]);
+  assert.equal(searchFilters(emptySearch()).files, undefined);
 });
 
 test("filters sent to the database follow the same-record rule and skip counts for History", () => {
@@ -176,11 +207,11 @@ test("clearing one filter keeps the others", () => {
 
 test("saved filter settings are cleaned and completed", () => {
   const config = normalizeViewConfig({ filters: ["part", "bogus", "date"], hidden: ["key", "nope"], sort: "key", desc: true, view: "preview" });
-  assert.deepEqual(config.filters, ["part", "date", "liturgy", "composer", "period", "count", "key", "venue"]);
+  assert.deepEqual(config.filters, ["part", "date", "liturgy", "composer", "period", "count", "key", "venue", "files"]);
   assert.deepEqual(config.hidden, ["key"]);
   assert.equal(config.sort, "key");
   assert.equal(config.desc, true);
   assert.equal(config.view, "preview");
-  assert.deepEqual(normalizeViewConfig(null).filters.length, 8);
+  assert.deepEqual(normalizeViewConfig(null).filters.length, 9);
   assert.equal(normalizeViewConfig({ sort: "x" }).sort, "title");
 });

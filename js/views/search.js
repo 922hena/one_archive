@@ -1,11 +1,12 @@
 import { t } from "../i18n.js";
 import { formatShortDate, formatTime, todayIso } from "../format.js";
 import { sortedParts } from "../music-parts.js";
-import { h, actionMenu, createDialog, errorMessage, notify, setBusy, displayScoreTitle } from "../ui.js";
+import { h, actionMenu, createDialog, errorMessage, notify, setBusy, displayScoreTitle, hasScoreFile, infoOnlyTag } from "../ui.js";
 import { KEY_MODES, KEY_TONICS, tonicLabel } from "../score-meta.js";
 import {
   COUNT_OPS,
   DEFAULT_PART_CODES,
+  FILE_CHOICES,
   FILTER_IDS,
   SEASONS,
   SORTS,
@@ -22,12 +23,14 @@ import {
   searchQuery
 } from "../search-state.js";
 import { roleLabel } from "./layouts.js";
-import { keyLabel, openScoreHistory, periodName } from "./library.js";
+import { keyLabel, openAttachFile, openScoreDetails, openScoreHistory, periodName } from "./library.js";
 import { massTitle } from "./mass.js";
 import { openViewer, thumbnailImage } from "./viewer.js";
 import { pdfFirstPageCanvas, thumbnailFromCanvas } from "../score-prepare.js";
 
 const SHEET_QUERY = "(max-width: 767px)";
+// Filters about the Scores themselves; History lists played records, so they are not shown there.
+const SCORES_ONLY = ["count", "files"];
 const MAX_OBSERVANCES_SHOWN = 60;
 const THUMB_FAILED_KEY = "yearscore-thumb-failed";
 const THUMB_RETRY_MS = 24 * 60 * 60 * 1000;
@@ -319,7 +322,7 @@ export async function renderSearch(container, ctx, { query = "" } = {}) {
     if (state.target === target) return;
     state.target = target;
     targetButtons.forEach((button, index) => button.setAttribute("aria-pressed", String(["scores", "history"][index] === target)));
-    if (panelId === "count" && target === "history") closePanel({ focus: false });
+    if (SCORES_ONLY.includes(panelId) && target === "history") closePanel({ focus: false });
     renderControls();
     changed({ delay: 0 });
   }
@@ -375,6 +378,8 @@ export async function renderSearch(container, ctx, { query = "" } = {}) {
         return shortList(state.venues.map((id) => placeById.get(id)?.name ?? "—"));
       case "part":
         return shortList(state.parts.map((id) => partName(roleById.get(id))));
+      case "files":
+        return state.files ? t(`search.files.${state.files}`) : "";
       default:
         return "";
     }
@@ -382,7 +387,7 @@ export async function renderSearch(container, ctx, { query = "" } = {}) {
 
   function visibleFilters() {
     return config.filters.filter(
-      (id) => (!config.hidden.includes(id) || isFilterActive(state, id)) && !(id === "count" && state.target === "history")
+      (id) => (!config.hidden.includes(id) || isFilterActive(state, id)) && !(SCORES_ONLY.includes(id) && state.target === "history")
     );
   }
 
@@ -520,9 +525,28 @@ export async function renderSearch(container, ctx, { query = "" } = {}) {
         return venuePanel();
       case "part":
         return partPanel();
+      case "files":
+        return filesPanel();
       default:
         return null;
     }
+  }
+
+  // Scores with a score file, Information Only, or both (PRD RIGHT-005).
+  function filesPanel() {
+    const name = `search-files-${Math.random().toString(36).slice(2)}`;
+    return h("fieldset", { class: "check-group" },
+      h("legend", { text: t("search.filesLegend") }),
+      [null, ...FILE_CHOICES].map((value) => {
+        const radio = h("input", { type: "radio", name, value: value ?? "", checked: state.files === value });
+        radio.addEventListener("change", () => {
+          if (!radio.checked) return;
+          state.files = value;
+          changed({ delay: 0 });
+        });
+        return h("label", { class: "check-row" }, radio, h("span", { text: t(`search.files.${value ?? "all"}`) }));
+      })
+    );
   }
 
   function liturgyPanel() {
@@ -957,6 +981,10 @@ export async function renderSearch(container, ctx, { query = "" } = {}) {
   }
 
   async function openScore(row) {
+    if (!hasScoreFile(row)) {
+      openScoreDetails(ctx, row.score_id);
+      return;
+    }
     try {
       const files = await ctx.db.scoreFiles(row.score_id);
       openViewer(ctx, { ...scoreOf(row), score_files: files });
@@ -965,9 +993,16 @@ export async function renderSearch(container, ctx, { query = "" } = {}) {
     }
   }
 
+  // Information Only rows have no file to open: their details and Attach Score File come instead.
   function rowMenu(row, title) {
+    const fileItems = hasScoreFile(row)
+      ? [{ label: t("search.openScore"), onSelect: () => openScore(row) }]
+      : [
+          { label: t("library.infoDetails"), onSelect: () => openScoreDetails(ctx, row.score_id) },
+          { label: t("library.attachFile"), onSelect: () => openAttachFile(ctx, scoreOf(row)) }
+        ];
     return actionMenu(t("search.moreFor", { title }), [
-      { label: t("search.openScore"), onSelect: () => openScore(row) },
+      ...fileItems,
       { label: t("search.addToMissa"), onSelect: () => openAddToMissa(ctx, row, roleById) },
       { label: t("search.viewHistory"), onSelect: () => openScoreHistory(ctx, scoreOf(row)) }
     ]);
@@ -994,7 +1029,8 @@ export async function renderSearch(container, ctx, { query = "" } = {}) {
         h("span", { class: "result-sub" },
           row.composer_label ? h("span", { class: "result-composer", translate: "no", text: row.composer_label }) : null,
           meta ? h("span", { class: "result-meta", translate: "no", text: meta }) : null
-        )
+        ),
+        hasScoreFile(row) ? null : infoOnlyTag()
       ),
       h("span", { class: "result-key", translate: "no", text: key || "–" }),
       h("span", { class: row.period_provisional ? "result-period is-provisional" : "result-period", title: row.period_provisional ? t("search.provisional") : null },
@@ -1109,6 +1145,8 @@ export async function renderSearch(container, ctx, { query = "" } = {}) {
     if (row.first_file_path) {
       thumb.append(h("span", { class: "preview-empty", text: t("common.loading") }));
       watchThumb(thumb, row);
+    } else if (!hasScoreFile(row)) {
+      thumb.append(infoOnlyTag());
     } else {
       thumb.append(h("span", { class: "preview-empty", text: t("search.noPreview") }));
     }

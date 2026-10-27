@@ -4,6 +4,8 @@ import { createDb } from "../js/db.js";
 import { createDemoClient } from "../js/demo-client.js";
 import { DEMO_ROLES, DEMO_USER_ID, demoReference, seedDemo } from "../js/demo-seed.js";
 import { uploadPreparedScore } from "../js/upload-prepared.js";
+import { attachPreparedFile } from "../js/upload-attach.js";
+import { setlistFromMass } from "../js/performance.js";
 import { shiftIso } from "../js/recurrence.js";
 
 const TODAY = "2026-10-28"; // a Wednesday
@@ -174,6 +176,135 @@ test("uploading a Score stores the file in the tab and lists it", async () => {
   assert.equal(await blob.text(), "%PDF-1.4 demo");
   await db.deleteScore(mine);
   await assert.rejects(db.download(mine.score_files[0].storage_path));
+});
+
+test("Save Score Information Only: a Score with no file is listed, searched, linked and counted", async () => {
+  const { state, client, db } = await setup();
+  const withFile = await addScore(client, { title: "Test With File" });
+  await assert.rejects(db.createInfoScore({ title: "   " }), { code: "title_required" });
+
+  const titleOnly = await db.createInfoScore({ title: "Title Only" });
+  const infoId = await db.createInfoScore({
+    title: " Ave verum corpus ",
+    composer_name: "Wolfgang Amadeus Mozart",
+    publisher: "Carus",
+    edition: "Urtext",
+    scorebook: "Choir book 2",
+    scorebook_page: "23",
+    physical_location: "Choir cabinet, binder 3",
+    external_url: "https://imslp.org/wiki/Ave_verum_corpus,_K.618_(Mozart,_Wolfgang_Amadeus)",
+    duration_seconds: 180,
+    difficulty: 2,
+    note: "  ",
+    period_code: "classical"
+  });
+  assert.equal(state.objects.length, 1, "only the uploaded Score has a stored file");
+
+  const scores = await db.readyScores();
+  const info = scores.find((score) => score.id === infoId);
+  assert.deepEqual(info.score_files, []);
+  assert.equal(info.title, "Ave verum corpus");
+  assert.equal(info.provisional_title, "Ave verum corpus");
+  assert.equal(info.physical_location, "Choir cabinet, binder 3");
+  assert.equal(info.scorebook_page, "23");
+  assert.equal(info.duration_seconds, 180);
+  assert.equal(info.difficulty, 2);
+  assert.equal(info.note, null, "a blank note is not stored");
+  assert.equal(scores.find((score) => score.id === titleOnly).composer_name, null);
+
+  const all = await db.searchScores({});
+  assert.equal(all.length, 3);
+  const infoRow = all.find((row) => row.score_id === infoId);
+  assert.equal(infoRow.file_count, 0);
+  assert.equal(infoRow.first_file_path, null);
+  const without = await db.searchScores({ files: "without" });
+  assert.deepEqual(without.map((row) => row.score_id).sort(), [infoId, titleOnly].sort());
+  const withFiles = await db.searchScores({ files: "with" });
+  assert.deepEqual(withFiles.map((row) => row.score_id), [withFile], "a PDF search never lists Information Only");
+  assert.deepEqual((await db.searchScores({ q: "binder 3" })).map((row) => row.score_id), [infoId]);
+  assert.deepEqual((await db.searchScores({ q: "carus" })).map((row) => row.score_id), [infoId]);
+  assert.deepEqual((await db.searchScores({ periods: ["classical"], files: "without" })).map((row) => row.score_id), [infoId]);
+
+  // Linked on past Sundays (played) and a future date (planned only): same rules as Scores with a file.
+  for (const date of ["2026-10-18", "2026-10-25"]) await linkOn(db, date, "communion", infoId);
+  await linkOn(db, "2026-11-01", "communion", infoId);
+  await linkOn(db, "2026-10-25", "offertory", withFile);
+  assert.equal((await db.scorePerformances(infoId)).length, 2);
+  const communion = await db.searchScores({ role_ids: [role("communion").id], files: "without" });
+  assert.deepEqual(communion.map((row) => [row.score_id, row.within_count]), [[infoId, 2]]);
+  assert.equal((await db.scoreUsage(infoId)).length, 3);
+
+  const [mass] = await db.massesOn("2026-10-25");
+  const detail = await db.mass(mass.id);
+  const entries = detail.mass_music_slots.flatMap((slot) => slot.mass_music_entries);
+  assert.deepEqual(entries.find((entry) => entry.owned_score_id === infoId).owned_scores.score_files, []);
+  const songs = setlistFromMass(detail, DEMO_ROLES);
+  assert.deepEqual(songs.map((song) => song.score.id), [withFile], "Performance Mode only shows Scores with pages");
+
+  await assert.rejects(db.deleteScore(info), { code: "23503" }, "a linked Score stays protected");
+  const unlinked = scores.find((score) => score.id === titleOnly);
+  await db.deleteScore(unlinked);
+  assert.equal(await db.score(titleOnly), null);
+});
+
+test("Attach Score File keeps the id, first-saved time, links, notes and history", async () => {
+  const { state, client, db } = await setup();
+  const scoreId = await db.createInfoScore({ title: "Panis angelicus", composer_name: "César Franck", note: "Paper copy only" });
+  await linkOn(db, "2026-10-18", "communion", scoreId);
+  const before = await db.score(scoreId);
+  const history = await db.scorePerformances(scoreId);
+  assert.equal(history.length, 1);
+
+  const prepared = {
+    fileId: crypto.randomUUID(),
+    thumbId: crypto.randomUUID(),
+    pdf: new Blob(["%PDF-1.4 attach"], { type: "application/pdf" }),
+    pdfName: "Panis angelicus.pdf",
+    thumb: { blob: new Blob(["thumb"], { type: "image/webp" }), ext: "webp", mime: "image/webp" }
+  };
+  await attachPreparedFile(client, DEMO_USER_ID, scoreId, prepared);
+  const after = await db.score(scoreId);
+  assert.equal(after.id, before.id);
+  assert.equal(after.created_at, before.created_at);
+  assert.equal(after.title, "Panis angelicus");
+  assert.equal(after.composer_name, "César Franck");
+  assert.equal(after.note, "Paper copy only");
+  assert.equal(after.provisional_title, "Panis angelicus.pdf");
+  assert.equal(after.score_files.length, 1);
+  assert.equal(after.score_files[0].storage_path, `${DEMO_USER_ID}/${scoreId}/${prepared.fileId}.pdf`);
+  assert.ok(after.thumbnail_path?.endsWith(`thumb-${prepared.thumbId}.webp`));
+  assert.equal(await (await db.download(after.score_files[0].storage_path)).text(), "%PDF-1.4 attach");
+  assert.deepEqual(await db.scorePerformances(scoreId), history);
+  assert.equal((await db.scoreUsage(scoreId)).length, 1);
+  assert.equal((await db.readyScores()).length, 1, "no second Score was made");
+  assert.deepEqual((await db.searchScores({ files: "with" })).map((row) => row.score_id), [scoreId]);
+
+  // The same try again (answer lost) changes nothing; a different file is refused.
+  await attachPreparedFile(client, DEMO_USER_ID, scoreId, prepared);
+  assert.equal((await db.score(scoreId)).score_files.length, 1);
+  await assert.rejects(attachPreparedFile(client, DEMO_USER_ID, scoreId, { ...prepared, fileId: crypto.randomUUID() }), {
+    code: "has_files"
+  });
+  assert.equal(state.objects.length, 2, "one PDF and one thumbnail");
+});
+
+test("Edit saves the new Score information and keeps the first-saved time", async () => {
+  const { client, db } = await setup();
+  const scoreId = await addScore(client, { title: "Test Uploaded" });
+  const before = await db.score(scoreId);
+  await db.updateScore(scoreId, {
+    title: before.title,
+    composer_name: before.composer_name,
+    physical_location: "  Shelf A  ",
+    publisher: "",
+    difficulty: 4
+  });
+  const after = await db.score(scoreId);
+  assert.equal(after.physical_location, "Shelf A");
+  assert.equal(after.publisher, null);
+  assert.equal(after.difficulty, 4);
+  assert.equal(after.created_at, before.created_at);
+  assert.equal(after.score_files.length, 1, "the uploaded file is untouched");
 });
 
 test("a Recurring Missa writes its dates and skips deleted ones", async () => {

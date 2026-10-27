@@ -1165,3 +1165,18 @@ User UI prefs: saved_views | sort_preferences | format_preferences | page_turn_s
 - 출처: 굿뉴스 매일미사 목록의 영어 제목. 9/20 한국 순교자 대축일(굿뉴스가 미국 전례력의 연중 제25주일을 표시)과 10/18 민족들의 복음화를 위한 미사, 12/25 세 미사의 구분은 로마 미사 경본 영어판(USCCB) 표기를 썼다. 자세한 내용은 마이그레이션 주석.
 - 화면: 전례일 이름은 `name_en`이 있으면 영어, 없으면 `name_ko`. 공식 전례로 저장된 Missa는 `observance_id`로 연결된 전례일 이름을 읽어 보여주고, `celebration_name`(저장 당시 한국어 복사본)은 기록으로 남긴다. 사용자가 직접 입력한 이름은 그대로 표시한다.
 - 새 날짜를 추가할 때는 `name_ko`와 함께 같은 출처 순서로 `name_en`을 채운다. 확인되지 않으면 비워 두고 한국어가 표시된다.
+
+### 31.8 정보만 등록한 Score (2026-10-28, `20261028120000_score_information_only.sql`) — PRD `RIGHT-001`~`005`
+
+사용자 승인 후 적용했다. 기존 표·행·파일·정책·Auth는 바꾸거나 지우지 않았고, `owned_scores` 칸 8개(모두 NULL 허용)와 그 권한을 **추가**하고 함수 3개를 같은 서명으로 교체했다.
+
+- **정의:** "정보만 등록한 Score" = `status='ready'`이고 살아 있는 쪽 파일(`score_files.role='page'`, `removed_at IS NULL`)이 0개인 `owned_scores` 행. 따로 표시하는 칸이 없으므로 기존 행을 고칠 필요가 없다. 파일을 붙이면 자동으로 "파일 있음"이 된다.
+- **저장:** 제목만 필수. `provisional_title`(필수 칸)에는 제목을 넣는다. Storage에 아무것도 올리지 않고 가짜 경로·자동 이미지도 만들지 않는다. 소유자는 로그인한 회원(`user_id` 기본값 `auth.uid()`).
+- **추가 칸:** `publisher`·`edition`·`scorebook`·`physical_location`(1~200자), `scorebook_page`(1~40자, 예: `23–25`), `external_url`(`http://`·`https://`로 시작, 공백 없음, 2000자 이하), `duration_seconds`(1~36000), `difficulty`(1~5). 화면은 빈 값을 NULL로 저장한다. 파일이 있는 Score에서도 같은 칸을 쓴다.
+- **권한:** `authenticated`에 새 칸 SELECT·INSERT·UPDATE 열 단위 권한. RLS `scores_own`(본인 행만)은 그대로라 새 칸도 본인만 읽고 쓴다.
+- **트리거 `touch_score_last_edited`:** 새 칸이 바뀔 때도 `last_edited_at`을 갱신한다. `created_at` 보호는 그대로다.
+- **검색:** `search_pool`의 글자 검색(`q`)이 출판사·판본·악보집·보관 위치도 찾는다. `search_scores`에 `p_filters.files` = `with`(파일 있음) / `without`(정보만)을 추가했다. Scores 검색에만 쓰고 History 검색에는 보내지 않는다. 함수 서명이 같아 기존 실행 권한이 유지된다.
+- **나중에 파일 붙이기:** 같은 Score id에 `score_files` 1행 + Storage PDF + 썸네일을 추가하고 `provisional_title`을 PDF 이름으로 바꾼다. Score를 지우고 다시 만들지 않으므로 id·`created_at`·Missa 연결·메모·연주 기록이 그대로다. 이미 파일이 있으면 거부(`has_files`), 같은 파일을 다시 보내면 한 번만 저장된다. 실패하면 이번에 넣은 행과 파일만 되돌리고 Score는 남긴다. 기존 Upload File / Scan Score 코드(`upload-prepared.js`)는 바꾸지 않고 별도 모듈(`upload-attach.js`)에서 같은 준비 결과를 쓴다.
+- **연결·연주:** Missa 항목 연결과 연주 횟수는 파일 유무와 관계없이 같다. Performance Mode는 쪽이 없는 Score를 건너뛴다.
+- **검증(실제 DB, 읽기 전용):** 적용 뒤 기존 Score 6개·살아 있는 파일 10개·연결 1개·Storage 파일 16개 그대로, 새 칸이 채워진 기존 행 0개. 계정 B로 조회하면 계정 A의 Score 6개·파일 10개 중 0개가 보인다. 보안 점검에서 새 경고 없음(기존 Auth 유출 비밀번호 보호 경고 1개만).
+- **남은 일:** 전례 시기·축일·Music Parts·장소는 Missa 연결에서 읽는다. Score 자체에 고정 전례 태그를 다는 것은 §10.3·§5.10 결정 전까지 만들지 않는다.

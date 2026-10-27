@@ -449,7 +449,36 @@ export default {
     performancesHint: "Counted from the day after each Missa. Cancelled Missae and Scores marked ‘Not played’ are not counted.",
     notPerformed: "No performances yet.",
     historyTitle: "Performance history",
-    historyFailed: "Couldn't load the performance history."
+    historyFailed: "Couldn't load the performance history.",
+    infoOnly: "Information\u00a0Only · No\u00a0Score\u00a0File",
+    infoOnlyHint: "Saved without a score file. Preview and Performance Mode need a file; links, notes and history stay when you attach one.",
+    infoDetails: "Details",
+    infoDetailsTitle: "Score details",
+    attachFile: "Attach Score File",
+    noScoreFile: "No score file yet.",
+    notFound: "This Score could not be found.",
+    deleteInfoConfirm: "This deletes ‘{title}’ and its information. This can't be undone.",
+    publisherLabel: "Publisher",
+    editionLabel: "Edition / Editor",
+    editionPlaceholder: "e.g. Urtext, 2nd edition",
+    scorebookLabel: "Scorebook",
+    scorebookPageLabel: "Page number",
+    scorebookPagePlaceholder: "e.g. 23 or 23–25",
+    locationLabel: "Physical location",
+    locationPlaceholder: "e.g. choir cabinet, binder 3",
+    linkLabel: "External link",
+    linkInvalid: "Enter a link that starts with http:// or https://.",
+    durationLabel: "Duration",
+    durationPlaceholder: "min:sec, e.g. 4:30",
+    durationInvalid: "Enter the duration as minutes:seconds (e.g. 4:30) or whole minutes, up to 600 minutes.",
+    difficultyLabel: "Difficulty",
+    difficulty: {
+      1: "1 · Very easy",
+      2: "2 · Easy",
+      3: "3 · Moderate",
+      4: "4 · Difficult",
+      5: "5 · Very difficult"
+    }
   },
   keys: {
     mode: {
@@ -489,7 +518,14 @@ export default {
       count: "Performances",
       key: "Key",
       venue: "Location",
-      part: "Music Parts"
+      part: "Music Parts",
+      files: "Score File"
+    },
+    filesLegend: "Score file",
+    files: {
+      all: "All",
+      with: "With score file",
+      without: "Information Only"
     },
     done: "Done",
     clear: "Clear",
@@ -624,7 +660,24 @@ export default {
     resume: "Resume",
     unfinished: "Unfinished upload: {name}.",
     saved: "Score saved.",
-    savedButLinkFailed: "The Score was saved to Score Library but couldn't be linked. Try again with ‘Link from Score Library’."
+    savedButLinkFailed: "The Score was saved to Score Library but couldn't be linked. Try again with ‘Link from Score Library’.",
+    infoOnlyButton: "Save Score Information Only",
+    infoOnlyLead: "No file or photo? Save only the Score's information.",
+    infoOnlyTitle: "Save Score Information Only",
+    infoOnlyIntro: "For a Score you keep on paper or elsewhere. No file, photo or first page is needed and nothing is uploaded. You can attach a score file later.",
+    infoOnlyMore: "More details",
+    infoOnlyLiturgyHint: "Liturgical seasons, feasts, Music Parts and places come from the Missae you link this Score to: ‘Add to Missa’ in Search, or ‘Link from Score Library’ in a Missa.",
+    infoOnlyDiscard: "The selected files will not be saved. Continue with information only?",
+    infoOnlySaved: "Score information saved.",
+    infoOnlyFailed: "Couldn't save the Score information.",
+    titleRequired: "Title (required)",
+    titleMissing: "Enter a title.",
+    attachTitle: "Attach Score File",
+    attachHint: "The file is added to this Score. Its information, Missa links, notes and performance history stay as they are.",
+    attachPreparedNote: "Ready to attach: {name} ({size}).",
+    attachHasFile: "This Score already has a score file.",
+    attachFailed: "Couldn't attach the file. Press Retry.",
+    attached: "Score file attached."
   },
   viewer: {
     count: "{page} / {total}",
@@ -652,6 +705,7 @@ export default {
     goToPage: "Go to page {page}",
     noWakeLock: "This device may turn the screen off. Change the auto-lock setting before you start.",
     noScores: "No Scores are linked yet. Use ‘Add Score’ or ‘Link from Score Library’ first.",
+    noFilesLinked: "The linked Scores have no score file yet. Attach one with ‘Attach Score File’ to use Performance Mode.",
     noScoresOnDate: "No Missa on this date has a linked Score yet. Add a Score first.",
     viewTools: "Page view tools",
     zoomIn: "Zoom in",

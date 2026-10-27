@@ -1,7 +1,9 @@
 // Search conditions <-> address (#/search?...) <-> p_filters of search_scores / search_history (PRD 4.13).
 import { KEY_MODES, KEY_TONICS } from "./score-meta.js";
 
-export const FILTER_IDS = ["liturgy", "date", "composer", "period", "count", "key", "venue", "part"];
+export const FILTER_IDS = ["liturgy", "date", "composer", "period", "count", "key", "venue", "part", "files"];
+// Score file filter (PRD RIGHT-005): "with" = has a score file, "without" = Information Only. null = both.
+export const FILE_CHOICES = ["with", "without"];
 export const SEASONS = ["advent", "christmas", "ordinary", "lent", "easter"];
 export const SORTS = ["title", "composer", "period", "count", "key", "last_performed", "created"];
 export const VIEWS = ["index", "notes", "preview"];
@@ -31,6 +33,7 @@ export function emptySearch() {
     parts: [],
     count: null,
     extra: null,
+    files: null,
     sort: null,
     desc: null,
     view: null,
@@ -110,6 +113,7 @@ export function parseSearchQuery(query) {
   if ((scope === "all" || scope === "venue") && extraCond) {
     state.extra = { scope, venues: unique(listParam(params, "xv").filter((id) => UUID.test(id))), cond: extraCond };
   }
+  state.files = FILE_CHOICES.includes(params.get("f")) ? params.get("f") : null;
   state.sort = SORTS.includes(params.get("sort")) ? params.get("sort") : null;
   state.desc = params.has("desc") ? params.get("desc") === "1" : null;
   state.view = VIEWS.includes(params.get("view")) ? params.get("view") : null;
@@ -140,6 +144,7 @@ export function searchQuery(state) {
     params.set("xn", countText(state.extra.cond));
     if (state.extra.scope === "venue" && state.extra.venues.length) params.set("xv", state.extra.venues.join(","));
   }
+  if (state.files) params.set("f", state.files);
   if (state.sort && state.sort !== "title") params.set("sort", state.sort);
   if (state.desc) params.set("desc", "1");
   if (state.view && state.view !== "index") params.set("view", state.view);
@@ -195,6 +200,7 @@ export function searchFilters(state) {
       filters.extra_count = { scope: state.extra.scope, ...state.extra.cond };
       if (state.extra.scope === "venue") filters.extra_count.venue_ids = [...state.extra.venues];
     }
+    if (state.files) filters.files = state.files;
   }
   return filters;
 }
@@ -217,6 +223,8 @@ export function isFilterActive(state, id) {
       return state.venues.length > 0;
     case "part":
       return state.parts.length > 0;
+    case "files":
+      return state.files != null;
     default:
       return false;
   }
@@ -232,7 +240,8 @@ export function clearFilter(state, id) {
     count: ["count", "extra"],
     key: ["keys"],
     venue: ["venues"],
-    part: ["parts"]
+    part: ["parts"],
+    files: ["files"]
   }[id] ?? [];
   const next = { ...state };
   for (const field of fields) next[field] = empty[field];

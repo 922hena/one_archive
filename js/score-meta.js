@@ -62,6 +62,32 @@ export function periodForYear(year, periods) {
   return found?.code ?? null;
 }
 
+// ---- optional Score information (PRD RIGHT-001). Limits match the database checks.
+export const DIFFICULTY_LEVELS = [1, 2, 3, 4, 5];
+export const MAX_DURATION_SECONDS = 36000;
+
+// "4:30" (minutes:seconds) or "4" (whole minutes) -> { ok, value: seconds }. Blank is allowed (value null).
+export function parseDuration(text) {
+  const raw = String(text ?? "").trim();
+  if (!raw) return { ok: true, value: null };
+  const match = /^(\d{1,3}):([0-5]\d)$/.exec(raw);
+  const seconds = match ? Number(match[1]) * 60 + Number(match[2]) : /^\d{1,3}$/.test(raw) ? Number(raw) * 60 : Number.NaN;
+  return seconds >= 1 && seconds <= MAX_DURATION_SECONDS ? { ok: true, value: seconds } : { ok: false, value: null };
+}
+
+// 270 -> "4:30"
+export function formatDuration(seconds) {
+  const value = Number(seconds);
+  if (!Number.isInteger(value) || value <= 0) return "";
+  return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, "0")}`;
+}
+
+// A web address the database accepts: http:// or https://, no spaces, at most 2000 characters.
+export function isWebLink(text) {
+  const value = String(text ?? "").trim();
+  return value.length <= 2000 && /^https?:\/\/\S+$/i.test(value);
+}
+
 // The member's choice first, then the composition year, then the composer's period (provisional).
 export function scorePeriod(score, periods, composerPeriod = null) {
   if (score?.period_code) return { code: score.period_code, provisional: false };
