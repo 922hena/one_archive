@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createDb } from "../js/db.js";
 import { createDemoClient } from "../js/demo-client.js";
-import { DEMO_ROLES, DEMO_USER_ID, demoReference, seedDemo } from "../js/demo-seed.js";
+import { DEMO_ROLES, DEMO_USER_ID, demoReference, seedDemo, seedDemoScores, staffPaperPdf } from "../js/demo-seed.js";
 import { uploadPreparedScore } from "../js/upload-prepared.js";
 import { attachPreparedFile } from "../js/upload-attach.js";
 import { setlistFromMass } from "../js/performance.js";
@@ -10,7 +10,7 @@ import { shiftIso } from "../js/recurrence.js";
 
 const TODAY = "2026-10-28"; // a Wednesday
 
-async function setup() {
+async function setup(today = TODAY) {
   const state = { tables: {}, objects: [] };
   let changes = 0;
   const client = createDemoClient({
@@ -18,10 +18,10 @@ async function setup() {
     state,
     reference: demoReference(),
     onChange: () => (changes += 1),
-    today: () => TODAY
+    today: () => today
   });
   const db = createDb(client);
-  await seedDemo({ db, today: TODAY });
+  await seedDemo({ db, today });
   return { state, client, db, changes: () => changes };
 }
 
@@ -78,6 +78,58 @@ test("a new demo has Missae and Music Parts but no Scores", async () => {
 
   const layouts = await db.layouts();
   assert.deepEqual(layouts.map((layout) => layout.name), ["Sunday", "Weekday"]);
+});
+
+test("demo sample Scores: staff-paper Ave verum corpus and information-only Missa de Angelis, played last Sunday", async () => {
+  const { state, client, db } = await setup();
+  await seedDemoScores({ db, client, today: TODAY });
+
+  const scores = await db.readyScores();
+  assert.equal(scores.length, 2);
+  const aveVerum = scores.find((score) => score.title === "Ave verum corpus");
+  const missa = scores.find((score) => score.title === "Missa de Angelis");
+  assert.equal(aveVerum.composer_name, "Wolfgang Amadeus Mozart");
+  assert.equal(aveVerum.score_files.length, 1);
+  assert.equal(aveVerum.score_files[0].mime_type, "application/pdf");
+  assert.equal(missa.composer_name, null);
+  assert.deepEqual(missa.score_files, []);
+  assert.equal(state.objects.length, 1, "only the staff-paper PDF is stored");
+
+  const pdf = await (await db.download(aveVerum.score_files[0].storage_path)).text();
+  assert.ok(pdf.startsWith("%PDF-1.4\n"));
+  assert.ok(pdf.includes("(Ave verum corpus) Tj"));
+  assert.doesNotMatch(pdf, /Image|XObject/, "title and empty staves only");
+
+  const [mass] = await db.massesOn("2026-10-25");
+  const { mass_music_slots: slots } = await db.mass(mass.id);
+  const linked = (code) => slots.find((slot) => slot.role_id === role(code).id).mass_music_entries.map((entry) => entry.owned_score_id);
+  assert.deepEqual(linked("entrance"), [aveVerum.id]);
+  assert.deepEqual(linked("kyrie"), [missa.id]);
+  assert.equal((await db.scorePerformances(aveVerum.id)).length, 1);
+  assert.equal((await db.scorePerformances(missa.id)).length, 1);
+  assert.deepEqual((await db.searchScores({ files: "without" })).map((row) => row.score_id), [missa.id]);
+
+  // On a Sunday the samples go to the Sunday before, so they still count as played.
+  const sunday = await setup("2026-10-25");
+  await seedDemoScores({ db: sunday.db, client: sunday.client, today: "2026-10-25" });
+  for (const score of await sunday.db.readyScores()) {
+    assert.equal((await sunday.db.scorePerformances(score.id)).length, 1);
+  }
+});
+
+test("staffPaperPdf writes a well-formed one-page PDF", async () => {
+  const pdf = await staffPaperPdf("A (b) \\ c").text();
+  assert.ok(pdf.includes("(A \\(b\\) \\\\ c) Tj"), "brackets and backslashes are escaped");
+  const xrefAt = Number(pdf.match(/startxref\n(\d+)\n%%EOF\n$/)[1]);
+  assert.ok(pdf.startsWith("xref\n", xrefAt));
+  const offsets = [...pdf.slice(xrefAt).matchAll(/^(\d{10}) 00000 n $/gm)].map((match) => Number(match[1]));
+  assert.equal(offsets.length, 5);
+  offsets.forEach((offset, index) => assert.ok(pdf.startsWith(`${index + 1} 0 obj\n`, offset), `object ${index + 1}`));
+  const length = Number(pdf.match(/\/Length (\d+) >>\nstream\n/)[1]);
+  const start = pdf.indexOf("stream\n") + "stream\n".length;
+  assert.equal(pdf.indexOf("endstream", start), start + length);
+  assert.equal(pdf.match(/ l\n/g).length, 50, "ten staves of five lines");
+  assert.ok(pdf.includes("/Count 1"));
 });
 
 test("played songs and Search follow the database rules", async () => {

@@ -5,7 +5,7 @@ import { h, notify, confirmDialog } from "./ui.js";
 import { startApp } from "./router.js";
 import { scopedName, setStorageScope } from "./storage-scope.js";
 import { createDemoClient, createMemoryBlobStore } from "./demo-client.js";
-import { DEMO_USER_ID, demoReference, seedDemo } from "./demo-seed.js";
+import { DEMO_USER_ID, demoReference, seedDemo, seedDemoScores } from "./demo-seed.js";
 
 // Demo page: the signed-in app without an account. No Supabase client is created; every change stays in this
 // browser tab (records in sessionStorage, files in IndexedDB) and is gone once the tab is closed.
@@ -197,7 +197,11 @@ async function boot() {
   });
   const db = createDb(client);
   try {
-    if (fresh) await seedDemo({ db, today: todayIso() });
+    if (fresh) {
+      const today = todayIso();
+      await seedDemo({ db, today });
+      await seedDemoScores({ db, client, today });
+    }
   } catch {
     viewRoot.replaceChildren(h("p", { class: "error-box", text: t("demo.startFailed") }));
     return;

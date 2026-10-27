@@ -1,11 +1,11 @@
 // Reference rows and sample data for the demo page (demo.html).
-// Reference rows are copies of operator data in the database (read only). The sample places, Music Parts
-// and Missae exist only in the visitor's browser tab; nothing is written to the database.
-// There are no sample Scores: visitors upload their own.
+// Reference rows are copies of operator data in the database (read only). The sample places, Music Parts,
+// Missae and two sample Scores exist only in the visitor's browser tab; nothing is written to the database.
 
 import { PREVIEW_OBSERVANCES } from "./preview-data.js";
 import { liturgyFields, shiftIso } from "./recurrence.js";
 import { weekdayIndex } from "./format.js";
+import { uploadPreparedScore } from "./upload-prepared.js";
 
 export const DEMO_USER_ID = "de000000-0000-4000-8000-000000000001";
 
@@ -63,7 +63,7 @@ function observanceOn(date) {
 }
 
 // Fills an empty demo tab: two saved Music Parts, two places, Sunday Missae from four weeks ago to three weeks
-// ahead and one weekday Missa, all without Scores.
+// ahead and one weekday Missa, all without Scores (seedDemoScores adds the samples).
 // db: createDb(demo client), today: "YYYY-MM-DD" in Korea.
 export async function seedDemo({ db, today }) {
   const roleByCode = new Map(DEMO_ROLES.map((role) => [role.code, role]));
@@ -111,4 +111,59 @@ export async function seedDemo({ db, today }) {
     },
     items(WEEKDAY_PARTS)
   );
+}
+
+// One A4 page with the title and empty staves only (no notes). title: ASCII text.
+export function staffPaperPdf(title) {
+  const text = String(title).replace(/[\\()]/g, (char) => `\\${char}`);
+  const lines = [];
+  for (let staff = 0; staff < 10; staff += 1) {
+    for (let line = 0; line < 5; line += 1) {
+      const y = 700 - staff * 64 - line * 7;
+      lines.push(`56 ${y} m 539 ${y} l`);
+    }
+  }
+  const content = `BT /F1 22 Tf 56 770 Td (${text}) Tj ET\n0.6 w\n${lines.join("\n")}\nS\n`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+    `<< /Length ${content.length} >>\nstream\n${content}endstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>"
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = objects.map((body, index) => {
+    const offset = pdf.length;
+    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
+    return offset;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  pdf += offsets.map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("");
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new Blob([pdf], { type: "application/pdf" });
+}
+
+// Two sample Scores for a new demo tab, linked to the last Sunday Missa before today so both count as played once:
+// "Ave verum corpus" with a staff-paper PDF (Introitus) and "Missa de Angelis" saved as information only (Kyrie).
+// Saved the same way as a member's upload. Run after seedDemo. client: the demo client given to createDb.
+export async function seedDemoScores({ db, client, today }) {
+  const sunday = shiftIso(today, -(weekdayIndex(today) || 7));
+  const [mass] = await db.massesOn(sunday);
+  const { mass_music_slots: slots } = await db.mass(mass.id);
+  const slotFor = (code) => slots.find((slot) => slot.role_id === DEMO_ROLES.find((role) => role.code === code).id);
+
+  const aveVerum = await uploadPreparedScore(client, DEMO_USER_ID, {
+    scoreId: crypto.randomUUID(),
+    fileId: crypto.randomUUID(),
+    thumbId: crypto.randomUUID(),
+    pdf: staffPaperPdf("Ave verum corpus"),
+    pdfName: "Ave verum corpus.pdf",
+    thumb: null,
+    title: "Ave verum corpus",
+    composerName: "Wolfgang Amadeus Mozart"
+  });
+  const missaDeAngelis = await db.createInfoScore({ title: "Missa de Angelis" });
+  await db.linkScore(slotFor("entrance").id, aveVerum);
+  await db.linkScore(slotFor("kyrie").id, missaDeAngelis);
 }
