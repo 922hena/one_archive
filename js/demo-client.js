@@ -626,15 +626,6 @@ export function createDemoClient({ userId, state, reference = {}, blobs = create
     isDemo: true,
     from: (table) => new Query(table),
     rpc,
-    storage: { from: () => bucket() },
-    // Files that exist without an upload: the sample pages, drawn the first time they are opened.
-    addStoredPaths(paths) {
-      for (const path of paths) {
-        if (objectSet.has(path)) continue;
-        objectSet.add(path);
-        state.objects.push(path);
-      }
-      onChange();
-    }
+    storage: { from: () => bucket() }
   };
 }

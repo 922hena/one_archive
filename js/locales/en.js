@@ -36,7 +36,7 @@ export default {
   },
   demo: {
     badge: "Demo",
-    note: "Try everything without an account. Your changes stay until you close this tab. Sample scores are placeholders for the demo — not the actual music.",
+    note: "Try everything without an account. Your changes stay until you close this tab.",
     reset: "Start over",
     resetConfirm: "Start over? Everything you added or changed in this demo will be removed and the sample data comes back.",
     signup: "Sign up",

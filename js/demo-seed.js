@@ -1,11 +1,11 @@
 // Reference rows and sample data for the demo page (demo.html).
-// Reference rows are copies of operator data in the database (read only). The sample places, Music Parts,
-// Scores and Missae exist only in the visitor's browser tab; nothing is written to the database.
+// Reference rows are copies of operator data in the database (read only). The sample places, Music Parts
+// and Missae exist only in the visitor's browser tab; nothing is written to the database.
+// There are no sample Scores: visitors upload their own.
 
 import { PREVIEW_OBSERVANCES } from "./preview-data.js";
 import { liturgyFields, shiftIso } from "./recurrence.js";
 import { weekdayIndex } from "./format.js";
-import { SAMPLE_SCORES } from "./demo-samples.js";
 
 export const DEMO_USER_ID = "de000000-0000-4000-8000-000000000001";
 
@@ -52,108 +52,20 @@ export function demoReference() {
   return { liturgical_roles: DEMO_ROLES, liturgical_observances: DEMO_OBSERVANCES, musical_periods: DEMO_PERIODS };
 }
 
-export { SAMPLE_SCORES };
-
 const SUNDAY_PARTS = [
   "entrance", "kyrie", "gloria", "responsorial_psalm", "gospel_acclamation", "offertory",
   "sanctus", "agnus_dei", "communion", "meditation", "recessional"
 ];
 const WEEKDAY_PARTS = ["entrance", "communion", "recessional"];
 
-// Sample linked to each part on the past Sundays, taking turns week by week.
-const PAST_LINKS = {
-  entrance: ["veni", "bach"],
-  kyrie: ["kyrie"],
-  gloria: ["gloria"],
-  responsorial_psalm: ["sicut"],
-  offertory: ["faure", "franck"],
-  communion: ["mozart", "adoro", "franck"],
-  meditation: ["schubert", "adoro"],
-  recessional: ["salve"]
-};
-const NEXT_LINKS = { entrance: "bach", kyrie: "kyrie", gloria: "gloria", communion: "mozart" };
-
-function must({ data, error }) {
-  if (error) throw Object.assign(new Error(error.message), error);
-  return data;
-}
-
-function fileBase(sample) {
-  return sample.title.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "");
-}
-
-function daysAgo(days) {
-  return new Date(Date.now() - days * 86400000).toISOString();
-}
-
 function observanceOn(date) {
   return DEMO_OBSERVANCES.filter((row) => row.calendar_date === date).sort((a, b) => a.sort_order - b.sort_order)[0] ?? null;
 }
 
-// Adds the sample Scores and their page records. Returns { [storage path]: { key, page, pages } } for the page images.
-async function addSampleScores(client, userId) {
-  const samples = {};
-  const scoreIds = new Map();
-  for (const [index, sample] of SAMPLE_SCORES.entries()) {
-    const scoreId = crypto.randomUUID();
-    const created = daysAgo(40 - index * 2);
-    must(await client.from("owned_scores").insert({
-      id: scoreId,
-      title: sample.title,
-      composer_name: sample.composer,
-      provisional_title: `${fileBase(sample)}.png`,
-      status: "uploading",
-      composition_year: sample.year ?? null,
-      key_tonic: sample.tonic ?? null,
-      key_mode: sample.mode ?? null,
-      note: sample.note ?? null,
-      created_at: created,
-      last_edited_at: created
-    }));
-    for (let page = 1; page <= sample.pages; page += 1) {
-      const fileId = crypto.randomUUID();
-      const path = `${userId}/${scoreId}/${fileId}.png`;
-      must(await client.from("score_files").insert({
-        id: fileId,
-        owned_score_id: scoreId,
-        storage_path: path,
-        mime_type: "image/png",
-        byte_size: 120000,
-        original_filename: `${fileBase(sample)}-${page}.png`,
-        page_no: page,
-        created_at: created
-      }));
-      samples[path] = { key: sample.key, page, pages: sample.pages };
-    }
-    // Marked ready after the pages, as an upload does, so the dates stay as they were.
-    must(await client.from("owned_scores").update({ status: "ready" }).eq("id", scoreId));
-    scoreIds.set(sample.key, scoreId);
-  }
-  return { samples, scoreIds };
-}
-
-async function linkParts(client, db, massId, links, scoreIds) {
-  const slots = must(await client.from("mass_music_slots").select("id,role_id").eq("mass_event_id", massId));
-  const linked = {};
-  for (const slot of slots) {
-    const code = DEMO_ROLES.find((role) => role.id === slot.role_id)?.code;
-    const key = links[code];
-    if (!key) continue;
-    await db.linkScore(slot.id, scoreIds.get(key));
-    linked[code] = { slotId: slot.id, scoreId: scoreIds.get(key) };
-  }
-  return linked;
-}
-
-async function updateEntry(client, link, patch) {
-  if (!link) return;
-  must(await client.from("mass_music_entries").update(patch).eq("mass_music_slot_id", link.slotId).eq("owned_score_id", link.scoreId));
-}
-
-// Fills an empty demo tab: two saved Music Parts, two places, the sample Scores, Sunday Missae from four weeks
-// ago to three weeks ahead (past ones with Scores, so Search and history have something to show) and one weekday Missa.
-// client: the demo client, db: createDb(client), today: "YYYY-MM-DD" in Korea.
-export async function seedDemo({ client, db, today, userId = DEMO_USER_ID }) {
+// Fills an empty demo tab: two saved Music Parts, two places, Sunday Missae from four weeks ago to three weeks
+// ahead and one weekday Missa, all without Scores.
+// db: createDb(demo client), today: "YYYY-MM-DD" in Korea.
+export async function seedDemo({ db, today }) {
   const roleByCode = new Map(DEMO_ROLES.map((role) => [role.code, role]));
   const items = (codes) => codes.map((code, index) => ({ role_id: roleByCode.get(code).id, display_name: null, sort_order: index + 1 }));
 
@@ -161,13 +73,11 @@ export async function seedDemo({ client, db, today, userId = DEMO_USER_ID }) {
   const weekdayLayout = await db.createLayout("Weekday", items(WEEKDAY_PARTS));
   const church = await db.createVenue("Main Church", sundayLayout);
   const chapel = await db.createVenue("Chapel", weekdayLayout);
-  const { samples, scoreIds } = await addSampleScores(client, userId);
 
   const lastSunday = shiftIso(today, -weekdayIndex(today));
-  const nextSunday = lastSunday === today ? today : shiftIso(lastSunday, 7);
   for (let week = -4; week <= 3; week += 1) {
     const date = shiftIso(lastSunday, week * 7);
-    const massId = await db.createMass(
+    await db.createMass(
       {
         local_date: date,
         title: null,
@@ -182,20 +92,11 @@ export async function seedDemo({ client, db, today, userId = DEMO_USER_ID }) {
       },
       items(SUNDAY_PARTS)
     );
-    if (date < today) {
-      const turn = Math.abs(week);
-      const links = Object.fromEntries(Object.entries(PAST_LINKS).map(([code, keys]) => [code, keys[turn % keys.length]]));
-      const linked = await linkParts(client, db, massId, links, scoreIds);
-      if (week === 0 || week === -1) await updateEntry(client, linked.communion, { note: "Slower tempo in the second verse." });
-      if (week === -2) await updateEntry(client, linked.recessional, { not_played_at: new Date().toISOString() });
-    } else if (date === nextSunday) {
-      await linkParts(client, db, massId, NEXT_LINKS, scoreIds);
-    }
   }
 
   const toWednesday = (3 - weekdayIndex(today) + 7) % 7 || 7;
   const weekdayDate = shiftIso(today, toWednesday);
-  const weekdayMass = await db.createMass(
+  await db.createMass(
     {
       local_date: weekdayDate,
       title: null,
@@ -210,6 +111,4 @@ export async function seedDemo({ client, db, today, userId = DEMO_USER_ID }) {
     },
     items(WEEKDAY_PARTS)
   );
-  await linkParts(client, db, weekdayMass, { communion: "adoro" }, scoreIds);
-  return samples;
 }

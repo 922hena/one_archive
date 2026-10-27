@@ -19,23 +19,50 @@ async function setup() {
     today: () => TODAY
   });
   const db = createDb(client);
-  const samples = await seedDemo({ client, db, today: TODAY });
-  client.addStoredPaths(Object.keys(samples));
-  return { state, client, db, samples, changes: () => changes };
+  await seedDemo({ db, today: TODAY });
+  return { state, client, db, changes: () => changes };
 }
 
 const role = (code) => DEMO_ROLES.find((item) => item.code === code);
+const PAST_SUNDAYS = ["2026-09-27", "2026-10-04", "2026-10-11", "2026-10-18", "2026-10-25"];
 
-test("the sample data reads back through db.js", async () => {
-  const { state, db, samples, changes } = await setup();
+// Scores made by the test itself; the demo starts with none.
+async function addScore(client, { title, composer = "", year = null, tonic = null, mode = null }) {
+  const scoreId = crypto.randomUUID();
+  await uploadPreparedScore(client, DEMO_USER_ID, {
+    scoreId,
+    fileId: crypto.randomUUID(),
+    thumbId: crypto.randomUUID(),
+    pdf: new Blob(["%PDF-1.4 test"], { type: "application/pdf" }),
+    pdfName: `${title}.pdf`,
+    thumb: null,
+    title,
+    composerName: composer
+  });
+  const { error } = await client
+    .from("owned_scores")
+    .update({ composition_year: year, key_tonic: tonic, key_mode: mode })
+    .eq("id", scoreId);
+  if (error) throw error;
+  return scoreId;
+}
+
+async function linkOn(db, date, code, scoreId) {
+  const [mass] = await db.massesOn(date);
+  const detail = await db.mass(mass.id);
+  const slot = detail.mass_music_slots.find((item) => item.role_id === role(code).id);
+  await db.linkScore(slot.id, scoreId);
+  return slot;
+}
+
+test("a new demo has Missae and Music Parts but no Scores", async () => {
+  const { state, db, changes } = await setup();
   assert.ok(changes() > 0);
   assert.equal(state.tables.user_mass_layouts.length, 2);
   assert.equal((await db.venues()).length, 2);
-  const scores = await db.readyScores();
-  assert.equal(scores.length, 12);
-  assert.ok(scores.every((score) => score.score_files.length >= 1));
-  assert.equal(Object.keys(samples).length, state.tables.score_files.length);
-  assert.equal(state.objects.length, state.tables.score_files.length);
+  assert.deepEqual(await db.readyScores(), []);
+  assert.equal(state.tables.owned_scores?.length ?? 0, 0);
+  assert.equal(state.objects.length, 0);
 
   // Sundays 09-27 .. 11-15 plus the weekday Missa on 11-04
   assert.equal(state.tables.mass_events.length, 9);
@@ -44,37 +71,55 @@ test("the sample data reads back through db.js", async () => {
   const mass = await db.mass(onSunday[0].id);
   assert.equal(mass.observance.name_en, "Solemnity of All Saints");
   assert.equal(mass.mass_music_slots.length, 11);
-  const linked = mass.mass_music_slots.flatMap((slot) => slot.mass_music_entries);
-  assert.equal(linked.length, 4);
-  assert.ok(linked.every((entry) => entry.owned_scores?.score_files?.length));
+  assert.equal(mass.mass_music_slots.flatMap((slot) => slot.mass_music_entries).length, 0);
+  assert.deepEqual(await db.searchScores({}), []);
 
   const layouts = await db.layouts();
   assert.deepEqual(layouts.map((layout) => layout.name), ["Sunday", "Weekday"]);
 });
 
 test("played songs and Search follow the database rules", async () => {
-  const { db } = await setup();
+  const { client, db } = await setup();
+  const classical = await addScore(client, { title: "Test Classical", composer: "Composer A", year: 1791, tonic: "D", mode: "major" });
+  const closing = await addScore(client, { title: "Test Closing" });
+  const early = await addScore(client, { title: "Test Early", year: 1584 });
+  for (const date of PAST_SUNDAYS) {
+    await linkOn(db, date, "communion", classical);
+    const slot = await linkOn(db, date, "recessional", closing);
+    if (date === "2026-10-11") {
+      const { error } = await client
+        .from("mass_music_entries")
+        .update({ not_played_at: new Date().toISOString() })
+        .eq("mass_music_slot_id", slot.id)
+        .eq("owned_score_id", closing);
+      if (error) throw error;
+    }
+  }
+  await linkOn(db, "2026-10-25", "communion", early);
+  await linkOn(db, "2026-11-01", "communion", early);
+
   const all = await db.searchScores({});
-  assert.equal(all.length, 12);
-  assert.equal(all[0].total_count, 12);
+  assert.equal(all.length, 3);
+  assert.equal(all[0].total_count, 3);
   assert.ok(all.every((row) => row.file_count >= 1 && row.first_file_path));
 
   const communion = await db.searchScores({ role_ids: [role("communion").id] });
-  assert.ok(communion.length >= 2);
+  assert.deepEqual(communion.map((row) => row.title).sort(), ["Test Classical", "Test Early"]);
   assert.ok(communion.every((row) => row.within_count >= 1));
 
-  const mozart = all.find((row) => row.title.startsWith("Ave verum"));
-  assert.equal(mozart.period_code, "classical");
-  const history = await db.scorePerformances(mozart.score_id);
-  assert.ok(history.length >= 1);
+  const first = all.find((row) => row.title === "Test Classical");
+  assert.equal(first.period_code, "classical");
+  const history = await db.scorePerformances(classical);
+  assert.equal(history.length, 5);
   assert.ok(history.every((row) => row.local_date < TODAY));
 
-  // five past Sundays; the recessional two weeks ago is marked "Not played"
-  const salve = all.find((row) => row.title === "Salve Regina");
-  assert.equal(salve.all_count, 4);
+  // five past Sundays, one of them marked "Not played"
+  assert.equal(all.find((row) => row.title === "Test Closing").all_count, 4);
+  // the link on a future date does not count yet
+  assert.equal(all.find((row) => row.title === "Test Early").all_count, 1);
 
   const byKey = await db.searchScores({ keys: [{ tonic: "D", mode: "major" }] });
-  assert.deepEqual(byKey.map((row) => row.title), ["Ave verum corpus, KV 618"]);
+  assert.deepEqual(byKey.map((row) => row.title), ["Test Classical"]);
   const sorted = await db.searchScores({}, { sort: "period" });
   assert.equal(sorted[0].period_code, "renaissance");
 
@@ -84,7 +129,8 @@ test("played songs and Search follow the database rules", async () => {
 });
 
 test("linked Scores and Music Parts are protected like in the database", async () => {
-  const { db } = await setup();
+  const { client, db } = await setup();
+  await linkOn(db, "2026-10-25", "communion", await addScore(client, { title: "Test Linked" }));
   const [mass] = await db.massesOn("2026-10-25");
   const detail = await db.mass(mass.id);
   const slots = detail.mass_music_slots;

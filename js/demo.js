@@ -5,14 +5,13 @@ import { h, notify, confirmDialog } from "./ui.js";
 import { startApp } from "./router.js";
 import { scopedName, setStorageScope } from "./storage-scope.js";
 import { createDemoClient, createMemoryBlobStore } from "./demo-client.js";
-import { DEMO_USER_ID, SAMPLE_SCORES, demoReference, seedDemo } from "./demo-seed.js";
-import { renderSamplePage } from "./demo-pages.js";
+import { DEMO_USER_ID, demoReference, seedDemo } from "./demo-seed.js";
 
 // Demo page: the signed-in app without an account. No Supabase client is created; every change stays in this
 // browser tab (records in sessionStorage, files in IndexedDB) and is gone once the tab is closed.
 
 const SESSION_KEY = "yearscore-demo";
-const SESSION_VERSION = 1;
+const SESSION_VERSION = 2;
 const REGISTRY_KEY = "yearscore-demo-tabs";
 const STALE_MS = 24 * 60 * 60 * 1000;
 const FILES_DB = "yearscore-demo-files";
@@ -106,11 +105,9 @@ function openFilesDb() {
   });
 }
 
-// File contents of this tab: uploads in IndexedDB (kept over a reload), sample pages drawn when first opened.
-function createTabBlobStore(samples) {
-  const memory = new Map();
+// File contents of this tab: uploads in IndexedDB (kept over a reload).
+function createTabBlobStore() {
   const fallback = createMemoryBlobStore();
-  const sampleByKey = new Map(SAMPLE_SCORES.map((sample) => [sample.key, sample]));
   let dbPromise = openFilesDb().catch(() => null);
 
   async function run(mode, work) {
@@ -128,27 +125,19 @@ function createTabBlobStore(samples) {
 
   return {
     async get(path) {
-      if (memory.has(path)) return memory.get(path);
       const stored = await run("readonly", (store, box) => {
         const request = store.get(path);
         request.onsuccess = () => {
           box.value = request.result ?? null;
         };
       }).catch(() => null);
-      if (stored) return stored;
-      const sample = samples[path];
-      if (!sample) return fallback.get(path);
-      const drawn = renderSamplePage(sampleByKey.get(sample.key), sample.page, sample.pages);
-      memory.set(path, drawn);
-      drawn.catch(() => memory.delete(path));
-      return drawn;
+      return stored ?? fallback.get(path);
     },
     async put(path, blob) {
       if (await dbPromise) await run("readwrite", (store) => store.put(blob, path));
       else await fallback.put(path, blob);
     },
     async delete(paths) {
-      for (const path of paths) memory.delete(path);
       await fallback.delete(paths);
       await run("readwrite", (store) => paths.forEach((path) => store.delete(path)));
     },
@@ -195,10 +184,10 @@ async function boot() {
   translateDom();
   let session = readSession();
   const fresh = !session;
-  if (fresh) session = { version: SESSION_VERSION, sid: crypto.randomUUID(), tables: {}, objects: [], samples: {} };
+  if (fresh) session = { version: SESSION_VERSION, sid: crypto.randomUUID(), tables: {}, objects: [] };
   setStorageScope(`demo-${session.sid}`);
   keepAlive(session.sid);
-  const blobs = createTabBlobStore(session.samples);
+  const blobs = createTabBlobStore();
   const client = createDemoClient({
     userId: DEMO_USER_ID,
     state: session,
@@ -208,11 +197,7 @@ async function boot() {
   });
   const db = createDb(client);
   try {
-    if (fresh) {
-      const samples = await seedDemo({ client, db, today: todayIso() });
-      Object.assign(session.samples, samples);
-      client.addStoredPaths(Object.keys(samples));
-    }
+    if (fresh) await seedDemo({ db, today: todayIso() });
   } catch {
     viewRoot.replaceChildren(h("p", { class: "error-box", text: t("demo.startFailed") }));
     return;
