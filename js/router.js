@@ -8,7 +8,7 @@ import { renderLibrary } from "./views/library.js";
 import { renderLayouts } from "./views/layouts.js";
 import { renderSearch } from "./views/search.js";
 
-// Screens of the signed-in app, shared by app.html and the demo page (demo.html).
+// Screens of the signed-in app (app.html).
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

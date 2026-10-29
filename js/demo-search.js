@@ -1,5 +1,5 @@
 // The search functions of the database (supabase/migrations/20261022150300_search_functions.sql and
-// 20261023020000_score_pdf_thumbnail.sql), written again for the demo page so they can run on data in the tab.
+// 20261023020000_score_pdf_thumbnail.sql), written again for the in-memory client so they can run on data in memory.
 // read(table) returns the rows of one table. Keep the rules the same as the SQL.
 
 const KEY_ORDER = ["Cb", "C", "C#", "Db", "D", "D#", "Eb", "E", "E#", "Fb", "F", "F#", "Gb", "G", "G#", "Ab", "A", "A#", "Bb", "B", "B#"];

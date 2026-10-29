@@ -1,6 +1,6 @@
 // Copy of the verified KR rows in liturgical_observances (Korean title and color: 매일미사, missa.cbck.or.kr;
 // English title: supabase/migrations/20261022120000_observance_english_names.sql).
-// Signed-out visitors cannot read that table, so the landing preview and the demo page (demo.html) use this copy.
+// Signed-out visitors cannot read that table, so the landing preview (and the test data in demo-seed.js) use this copy.
 // Only copy rows that are already verified in the database; never add dates by hand.
 export const PREVIEW_OBSERVANCES = [
   { id: "d4f2c3b0-f751-4a17-9a44-0a90c563ae2b", calendar_date: "2026-09-06", sort_order: 1, season_code: "ordinary", rank_code: "sunday", name_ko: "연중 제23주일", name_en: "Twenty-third Sunday in Ordinary Time", color_code: "green", source_url: "https://missa.cbck.or.kr/DailyMissa/20260906" },

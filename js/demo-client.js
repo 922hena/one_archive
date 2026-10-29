@@ -1,6 +1,6 @@
-// Stand-in for the Supabase client on the demo page (demo.html). It answers the same calls that db.js and the
-// upload code make, from data kept in this browser tab. Nothing here talks to a server, so the demo cannot read
-// or change any account, database row or Storage file of a member.
+// In-memory stand-in for the Supabase client, used by the tests (tests/demo-client.test.mjs). It answers the
+// same calls that db.js and the upload code make, from data kept in memory. Nothing here talks to a server, so
+// it cannot read or change any account, database row or Storage file of a member.
 
 import { todayIso } from "./format.js";
 import { performedEntries, searchHistory, searchScores } from "./demo-search.js";

@@ -1,6 +1,6 @@
-// Reference rows and sample data for the demo page (demo.html).
+// Reference rows and sample data for the in-memory client (demo-client.js) used by the tests.
 // Reference rows are copies of operator data in the database (read only). The sample places, Music Parts,
-// Missae and two sample Scores exist only in the visitor's browser tab; nothing is written to the database.
+// Missae and two sample Scores exist only in memory; nothing is written to the database.
 
 import { PREVIEW_OBSERVANCES } from "./preview-data.js";
 import { liturgyFields, shiftIso } from "./recurrence.js";
