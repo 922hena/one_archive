@@ -72,6 +72,29 @@ export function clampZoom(zoom) {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom));
 }
 
+// − / +: to the next 25% mark below or above, so 113% goes to 100% or 125%.
+export function stepZoom(zoom, direction) {
+  const percent = Math.round(clampZoom(zoom) * 100);
+  const step = Math.round(ZOOM_STEP * 100);
+  const next = direction > 0 ? Math.floor(percent / step) * step + step : Math.ceil(percent / step) * step - step;
+  return clampZoom(next / 100);
+}
+
+// Text typed in the zoom box ("113" or "113%") -> { ok, value } with value as a zoom (1.13).
+export function parseZoomPercent(text) {
+  const raw = String(text ?? "").trim().replace(/%$/, "").trim();
+  const number = raw ? Number(raw) : Number.NaN;
+  if (!Number.isFinite(number)) return { ok: false, value: null };
+  return { ok: true, value: clampZoom(Math.round(number) / 100) };
+}
+
+// Saved zoom -> one value per orientation (100% when nothing usable was saved).
+export function normalizeZoomPrefs(saved) {
+  const read = (value) => clampZoom(Math.round(Number(value) * 100) / 100);
+  const source = saved && typeof saved === "object" ? saved : {};
+  return { landscape: read(source.landscape ?? ZOOM_MIN), portrait: read(source.portrait ?? ZOOM_MIN) };
+}
+
 // Keeps a zoomed page from being dragged away from the screen: the page edge stops at the screen edge.
 // content/box are the unzoomed sizes { w, h }.
 export function clampPan(pan, zoom, content, box) {

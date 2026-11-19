@@ -8,7 +8,7 @@ import {
   MAX_PER_VIEW,
   NAV_SIZES,
   ZOOM_MAX,
-  ZOOM_STEP,
+  ZOOM_MIN,
   clampPan,
   clampPerView,
   clampZoom,
@@ -21,13 +21,16 @@ import {
   nextIndex,
   normalizeDisplay,
   normalizePerView,
+  normalizeZoomPrefs,
   orientationOf,
   pageAlign,
   pageTimeKey,
   parseSeconds,
+  parseZoomPercent,
   prevIndex,
   songStarts,
   spreadSize,
+  stepZoom,
   viewSeconds
 } from "../performance.js";
 import { countOfflineFiles, getOfflineFile, removeOfflineFiles, requestPersistence, saveOfflineFile } from "../offline-files.js";
@@ -59,7 +62,8 @@ const MENU_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M
 
 let pdfjsPromise = null;
 
-// Device-only settings: pages on screen (one count per orientation), default auto-turn seconds, and seconds per page.
+// Device-only settings: pages on screen and zoom (one value per orientation), pinch in Perform,
+// default auto-turn seconds, and seconds per page.
 // Nothing here is sent to the server.
 function readJson(key) {
   try {
@@ -84,6 +88,8 @@ function loadPrefs() {
   return {
     // older versions saved only "two pages on/off"
     perView: normalizePerView(saved.perView ?? (saved.twoUp === true ? 2 : 1)),
+    zoom: normalizeZoomPrefs(saved.zoom),
+    pinch: saved.pinch !== false, // two-finger zoom while the layout is locked; on unless turned off
     autoDefault: fallback.ok && fallback.value ? fallback.value : AUTO_DEFAULT,
     quick: Array.isArray(saved.quick) ? QUICK_KINDS.filter((kind) => saved.quick.includes(kind)) : [],
     corner: CORNERS.includes(saved.corner) ? saved.corner : CORNERS[0]
@@ -187,7 +193,10 @@ export function openPerformance(ctx, { title, songs }) {
   let orientation = orientationOf(window.innerWidth, window.innerHeight);
   let perView = perViewSaved[orientation]; // pages on one screen in the current orientation
   let shownIndex = 0; // first page of what is really on screen (index moves before the new pages are ready)
-  let zoom = 1;
+  const zoomSaved = prefs.zoom; // { landscape, portrait }
+  let zoom = zoomSaved[orientation];
+  let pinch = prefs.pinch;
+  let zoomOpen = false;
   let pan = { x: 0, y: 0 };
   // Perform (default): only the score, layout locked. Edit: the layout tools can be used.
   let editing = false;
@@ -236,9 +245,9 @@ export function openPerformance(ctx, { title, songs }) {
   const lineupButton = multi
     ? h("button", { type: "button", class: "viewer-tool", "aria-expanded": "false", onclick: () => toggleLineup() }, t("perform.lineup"))
     : null;
-  const zoomOutButton = h("button", { type: "button", class: "viewer-tool", "aria-label": t("perform.zoomOut"), onclick: () => setZoom(zoom - ZOOM_STEP) }, "−");
-  const zoomLabel = h("button", { type: "button", class: "viewer-tool num", "aria-label": t("perform.zoomFit"), onclick: () => setZoom(1) }, "100%");
-  const zoomInButton = h("button", { type: "button", class: "viewer-tool", "aria-label": t("perform.zoomIn"), onclick: () => setZoom(zoom + ZOOM_STEP) }, "+");
+  const zoomOutButton = h("button", { type: "button", class: "viewer-tool", "aria-label": t("perform.zoomOut"), onclick: () => setZoom(stepZoom(zoom, -1)) }, "−");
+  const zoomLabel = h("button", { type: "button", class: "viewer-tool num", "aria-label": t("perform.zoomAdjust"), "aria-expanded": "false", onclick: () => toggleZoomPanel() }, "100%");
+  const zoomInButton = h("button", { type: "button", class: "viewer-tool", "aria-label": t("perform.zoomIn"), onclick: () => setZoom(stepZoom(zoom, 1)) }, "+");
   const fitWidthButton = h("button", { type: "button", class: "viewer-tool", onclick: fitWidth }, t("perform.fitWidth"));
   const viewButtons = Array.from({ length: MAX_PER_VIEW }, (_, n) =>
     h("button", {
@@ -287,6 +296,7 @@ export function openPerformance(ctx, { title, songs }) {
   );
   const opacityInput = h("input", { type: "range", id: "display-opacity", class: "display-range", min: "20", max: "100", step: "5", "aria-label": t("perform.arrowOpacity"), oninput: () => changeDisplay({ opacity: Number(opacityInput.value) }) });
   const brightnessInput = h("input", { type: "range", id: "display-brightness", class: "display-range", min: "40", max: "100", step: "5", "aria-label": t("perform.brightness"), oninput: () => changeDisplay({ brightness: Number(brightnessInput.value) }) });
+  const pinchInput = h("input", { type: "checkbox", id: "display-pinch", class: "display-check", onchange: () => setPinch(pinchInput.checked) });
   const quickChecks = QUICK_KINDS.map((kind) => {
     const id = `quick-${kind}`;
     const input = h("input", { type: "checkbox", id, class: "display-check", onchange: () => setQuick(kind, input.checked) });
@@ -323,6 +333,40 @@ export function openPerformance(ctx, { title, songs }) {
         h("div", { class: "viewer-view corner-buttons" }, ...cornerButtons)
       ),
       h("p", { class: "auto-hint", text: t("perform.quickHint") })
+    ),
+    h("div", { class: "auto-body display-quick" },
+      h("strong", { class: "display-sub", text: t("perform.zoomTitle") }),
+      h("div", { class: "auto-line" }, h("label", { for: "display-pinch", text: t("perform.pinch") }), pinchInput),
+      h("p", { class: "auto-hint", text: t("perform.pinchHint") })
+    )
+  );
+  // Zoom panel: 1% steps, opened from the zoom number in Edit.
+  const zoomRange = { min: Math.round(ZOOM_MIN * 100), max: Math.round(ZOOM_MAX * 100) };
+  const zoomInput = h("input", {
+    type: "number",
+    id: "zoom-percent",
+    class: "auto-input num",
+    inputmode: "numeric",
+    min: String(zoomRange.min),
+    max: String(zoomRange.max),
+    step: "1",
+    "aria-label": t("perform.zoomPercent"),
+    onchange: onZoomInput
+  });
+  const zoomMinusOne = h("button", { type: "button", class: "viewer-tool", "aria-label": t("perform.zoomMinusOne"), onclick: () => setZoom(zoom - 0.01) }, "−1");
+  const zoomPlusOne = h("button", { type: "button", class: "viewer-tool", "aria-label": t("perform.zoomPlusOne"), onclick: () => setZoom(zoom + 0.01) }, "+1");
+  const zoomPanel = h("section", { class: "viewer-auto viewer-zoom", "aria-label": t("perform.zoomTitle"), hidden: true },
+    h("div", { class: "lineup-head" },
+      h("strong", { text: t("perform.zoomTitle") }),
+      h("button", { type: "button", class: "viewer-tool", onclick: () => toggleZoomPanel(false) }, t("common.close"))
+    ),
+    h("div", { class: "auto-body" },
+      h("div", { class: "auto-line" },
+        h("label", { for: "zoom-percent", text: t("perform.zoomPercent") }),
+        h("div", { class: "viewer-view" }, zoomMinusOne, zoomInput, zoomPlusOne)
+      ),
+      h("div", { class: "auto-line" }, h("button", { type: "button", class: "viewer-tool", onclick: () => setZoom(1) }, t("perform.zoomReset"))),
+      h("p", { class: "auto-hint", text: t("perform.zoomHint", zoomRange) })
     )
   );
   // The small group over the score: the member's quick buttons and the tools menu button.
@@ -336,13 +380,13 @@ export function openPerformance(ctx, { title, songs }) {
   menuButton.innerHTML = MENU_ICON;
   const quickPagesButton = h("button", { type: "button", class: "perform-quick", onclick: () => setPerView(perView === 1 ? 2 : 1, true) });
   const quickBrightButton = h("button", { type: "button", class: "perform-quick num", onclick: stepBrightness });
-  const quickZoomOut = h("button", { type: "button", class: "perform-quick", "aria-label": t("perform.zoomOut"), onclick: () => setZoom(zoom - ZOOM_STEP, true) }, "−");
-  const quickZoomIn = h("button", { type: "button", class: "perform-quick", "aria-label": t("perform.zoomIn"), onclick: () => setZoom(zoom + ZOOM_STEP, true) }, "+");
+  const quickZoomOut = h("button", { type: "button", class: "perform-quick", "aria-label": t("perform.zoomOut"), onclick: () => setZoom(stepZoom(zoom, -1), true) }, "−");
+  const quickZoomIn = h("button", { type: "button", class: "perform-quick", "aria-label": t("perform.zoomIn"), onclick: () => setZoom(stepZoom(zoom, 1), true) }, "+");
   const quickButtons = { pages: [quickPagesButton], brightness: [quickBrightButton], zoom: [quickZoomOut, quickZoomIn] };
   const float = h("div", { class: "perform-float", role: "group", "aria-label": t("perform.quickGroup") },
     quickPagesButton, quickBrightButton, quickZoomOut, quickZoomIn, menuButton
   );
-  const stage = h("div", { class: "viewer-stage" }, holder, prevButton, nextButton, notice, float, lineupPanel, autoPanel, displayPanel);
+  const stage = h("div", { class: "viewer-stage" }, holder, prevButton, nextButton, notice, float, lineupPanel, autoPanel, displayPanel, zoomPanel);
   // Handwritten notes: a canvas over the pages plus its tool bar (see notes-layer.js).
   const notes = createNotesLayer({
     visiblePages,
@@ -381,7 +425,7 @@ export function openPerformance(ctx, { title, songs }) {
   );
 
   function persistPrefs() {
-    savePrefs({ perView: perViewSaved, autoDefault, quick, corner });
+    savePrefs({ perView: perViewSaved, zoom: zoomSaved, pinch, autoDefault, quick, corner });
   }
 
   function showLoading() {
@@ -535,8 +579,13 @@ export function openPerformance(ctx, { title, songs }) {
     );
   }
 
-  // The Lineup, Auto turn and Display panels share the right side: only one is open at a time.
+  // The Lineup, Auto turn, Display and Zoom panels share the right side: only one is open at a time.
   function closeSidePanels(keep) {
+    if (keep !== "zoom" && zoomOpen) {
+      zoomOpen = false;
+      zoomPanel.hidden = true;
+      zoomLabel.setAttribute("aria-expanded", "false");
+    }
     if (keep !== "lineup" && lineupOpen) {
       lineupOpen = false;
       lineupPanel.hidden = true;
@@ -780,6 +829,13 @@ export function openPerformance(ctx, { title, songs }) {
     zoomInButton.disabled = locked || zoom >= ZOOM_MAX;
     quickZoomOut.disabled = zoom <= 1;
     quickZoomIn.disabled = zoom >= ZOOM_MAX;
+    zoomMinusOne.disabled = locked || zoom <= 1;
+    zoomPlusOne.disabled = locked || zoom >= ZOOM_MAX;
+    // not while the member is typing a number in the box
+    if (document.activeElement !== zoomInput) {
+      zoomInput.value = String(Math.round(zoom * 100));
+      zoomInput.removeAttribute("aria-invalid");
+    }
     if (!el) return;
     const { content, box } = sizes();
     pan = clampPan(pan, zoom, content, box);
@@ -793,6 +849,46 @@ export function openPerformance(ctx, { title, songs }) {
     zoom = clampZoom(Math.round(next * 100) / 100);
     if (zoom === 1) pan = { x: 0, y: 0 };
     applyZoom();
+    rememberZoom();
+  }
+
+  // Zoom is remembered on this device, one value for portrait and one for landscape.
+  function rememberZoom() {
+    const value = clampZoom(Math.round(zoom * 100) / 100);
+    if (zoomSaved[orientation] === value) return;
+    zoomSaved[orientation] = value;
+    persistPrefs();
+  }
+
+  function onZoomInput() {
+    const { ok, value } = parseZoomPercent(zoomInput.value);
+    if (!ok) {
+      zoomInput.setAttribute("aria-invalid", "true");
+      flash(t("perform.zoomInvalid", zoomRange), 3000);
+      return;
+    }
+    setZoom(value);
+    zoomInput.value = String(Math.round(zoom * 100)); // e.g. 450 typed -> 400
+  }
+
+  function toggleZoomPanel(force) {
+    zoomOpen = force ?? !zoomOpen;
+    if (zoomOpen) closeSidePanels("zoom");
+    zoomPanel.hidden = !zoomOpen;
+    zoomLabel.setAttribute("aria-expanded", String(zoomOpen));
+    if (zoomOpen) {
+      applyZoom();
+      zoomInput.focus();
+      zoomInput.select();
+    } else {
+      zoomLabel.focus();
+    }
+  }
+
+  function setPinch(on) {
+    if (locked) return;
+    pinch = on;
+    persistPrefs();
   }
 
   function fitWidth() {
@@ -979,6 +1075,7 @@ export function openPerformance(ctx, { title, songs }) {
     arrowsInput.checked = settings.arrows;
     opacityInput.value = String(settings.opacity);
     brightnessInput.value = String(settings.brightness);
+    pinchInput.checked = pinch;
     Object.keys(NAV_SIZES).forEach((name, n) => sizeButtons[n].setAttribute("aria-pressed", String(name === settings.size)));
     updateQuick();
   }
@@ -1032,6 +1129,7 @@ export function openPerformance(ctx, { title, songs }) {
   function setEditing(next) {
     editing = next;
     if (!editing && displayOpen) toggleDisplayPanel(false);
+    if (!editing && zoomOpen) toggleZoomPanel(false);
     applyMode();
     flash(t(editing ? "perform.editOn" : "perform.editOff"));
   }
@@ -1153,8 +1251,8 @@ export function openPerformance(ctx, { title, songs }) {
     else if (event.key === " " && !onButton) step = event.shiftKey ? -1 : 1;
     else if (event.key === "Home") step = -index;
     else if (event.key === "End") step = pages.length - 1 - index;
-    else if (!onButton && (event.key === "+" || event.key === "=")) return void setZoom(zoom + ZOOM_STEP, canZoomByHand());
-    else if (!onButton && (event.key === "-" || event.key === "_")) return void setZoom(zoom - ZOOM_STEP, canZoomByHand());
+    else if (!onButton && (event.key === "+" || event.key === "=")) return void setZoom(stepZoom(zoom, 1), canZoomByHand());
+    else if (!onButton && (event.key === "-" || event.key === "_")) return void setZoom(stepZoom(zoom, -1), canZoomByHand());
     else if (!onButton && event.key === "0") return void setZoom(1, canZoomByHand());
     if (!step) return;
     event.preventDefault();
@@ -1170,11 +1268,14 @@ export function openPerformance(ctx, { title, songs }) {
     if (event.target.closest("button, .perform-float, .viewer-lineup, .viewer-auto, .viewer-notes")) return;
     touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
     moved = false;
-    if (touches.size === 2 && canZoomByHand()) {
-      // two fingers: pinch to zoom (and move the page while pinching)
-      const [a, b] = [...touches.values()];
-      gesture = { kind: "pinch", dist: Math.hypot(a.x - b.x, a.y - b.y), zoom, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+    if (touches.size >= 2) {
+      // a second finger never turns the page, even when pinch to zoom is off
       pointer = null;
+      if (touches.size === 2 && canZoomByHand()) {
+        // two fingers: pinch to zoom (and move the page while pinching)
+        const [a, b] = [...touches.values()];
+        gesture = { kind: "pinch", dist: Math.hypot(a.x - b.x, a.y - b.y), zoom, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+      }
       return;
     }
     // a pen stroke or eraser swipe: it must not also turn the page
@@ -1214,6 +1315,7 @@ export function openPerformance(ctx, { title, songs }) {
     if (wasPinch) {
       if (!touches.size) gesture = null;
       pointer = null;
+      rememberZoom();
       return;
     }
     if (!pointer || pointer.id !== event.pointerId) return;
@@ -1233,9 +1335,10 @@ export function openPerformance(ctx, { title, songs }) {
     else toggleTools();
   }
 
-  // Pinch, Ctrl + wheel and moving a zoomed page: in Edit, or in Perform when the member chose the zoom buttons.
+  // Pinch, Ctrl + wheel and moving a zoomed page: in Edit, or in Perform when pinch to zoom is on
+  // or the member chose the zoom buttons.
   function canZoomByHand() {
-    return !locked || quick.includes("zoom");
+    return !locked || pinch || quick.includes("zoom");
   }
 
   function onResize() {
@@ -1246,6 +1349,10 @@ export function openPerformance(ctx, { title, songs }) {
       if (now !== orientation) {
         orientation = now;
         perView = perViewSaved[orientation];
+        zoom = zoomSaved[orientation];
+        pan = { x: 0, y: 0 };
+        zoomInput.value = String(Math.round(zoom * 100)); // applyZoom leaves the box alone while it has focus
+        zoomInput.removeAttribute("aria-invalid");
         updateViewButtons();
       }
       applyDisplay();
@@ -1303,6 +1410,11 @@ export function openPerformance(ctx, { title, songs }) {
     if (displayOpen) {
       event.preventDefault();
       toggleDisplayPanel(false);
+      return;
+    }
+    if (zoomOpen) {
+      event.preventDefault();
+      toggleZoomPanel(false);
       return;
     }
     if (autoOpen) {

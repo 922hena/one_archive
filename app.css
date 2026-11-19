@@ -308,6 +308,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .auto-rows { display: flex; flex-direction: column; gap: 8px; }
 .auto-hint { margin: 0; color: #c9cbc8; font-size: 0.8rem; line-height: 1.4; }
 .viewer-auto :focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.viewer-zoom .viewer-tool { min-width: 44px; min-height: 44px; }
+.viewer-zoom .auto-input { width: 72px; text-align: center; }
 .viewer-stage.is-zoomed { cursor: grab; }
 @media (pointer: coarse) { .viewer-tools .viewer-tool, .viewer-bar .viewer-tool { min-height: 44px; } .viewer-tool.is-close { width: 44px; } }
 .viewer-lineup { position: absolute; top: 0; right: 0; bottom: 0; width: min(440px, 100%); display: flex; flex-direction: column; background: #111211; border-left: 1px solid rgba(255, 255, 255, 0.18); z-index: 3; }
@@ -346,6 +348,9 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .perform-float[data-corner="bottom-left"] { bottom: 8px; left: 8px; }
 .perform-float[data-corner$="left"] .perform-menu { order: -1; }
 .viewer-stage:has(.perform-float[data-corner^="bottom"]) .viewer-notice { bottom: max(64px, env(safe-area-inset-bottom)); }
+/* the floating buttons stay above the side panels, so in a top corner the panels start below them */
+.viewer-stage:has(.perform-float[data-corner^="top"]) :is(.viewer-lineup, .viewer-auto) { top: 60px; border-top: 1px solid rgba(255, 255, 255, 0.18); }
+.viewer-stage:has(.perform-float[data-corner^="top"]) .viewer-auto { max-height: calc(100% - 60px); }
 .perform-menu, .perform-quick {
   min-width: 44px; height: 44px; padding: 0 10px; border: 0; border-radius: var(--radius); background: rgba(17, 18, 17, 0.5); color: #fff;
   font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; opacity: 0.6; transition: opacity 120ms, background-color 120ms;

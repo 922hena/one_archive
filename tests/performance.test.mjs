@@ -133,12 +133,15 @@ import {
   nextIndex,
   normalizeDisplay,
   normalizePerView,
+  normalizeZoomPrefs,
   orientationOf,
   pageAlign,
   pageTimeKey,
   parseSeconds,
+  parseZoomPercent,
   prevIndex,
   spreadSize,
+  stepZoom,
   viewSeconds
 } from "../js/performance.js";
 
@@ -147,6 +150,36 @@ test("zoom stays between fit page and the maximum", () => {
   assert.equal(clampZoom(2.5), 2.5);
   assert.equal(clampZoom(99), ZOOM_MAX);
   assert.equal(clampZoom(NaN), 1);
+});
+
+test("− / + go to the next 25% mark, also after a fine adjustment", () => {
+  assert.equal(stepZoom(1, 1), 1.25);
+  assert.equal(stepZoom(1.25, 1), 1.5);
+  assert.equal(stepZoom(1.13, 1), 1.25);
+  assert.equal(stepZoom(1.13, -1), 1);
+  assert.equal(stepZoom(1.5, -1), 1.25);
+  assert.equal(stepZoom(1.51, -1), 1.5);
+  assert.equal(stepZoom(1, -1), 1);
+  assert.equal(stepZoom(ZOOM_MAX, 1), ZOOM_MAX);
+  assert.equal(stepZoom(3.9, 1), ZOOM_MAX);
+});
+
+test("the zoom box takes whole percents from 100 to 400", () => {
+  assert.deepEqual(parseZoomPercent("113"), { ok: true, value: 1.13 });
+  assert.deepEqual(parseZoomPercent(" 113% "), { ok: true, value: 1.13 });
+  assert.deepEqual(parseZoomPercent("112.6"), { ok: true, value: 1.13 });
+  assert.deepEqual(parseZoomPercent("50"), { ok: true, value: 1 });
+  assert.deepEqual(parseZoomPercent("450"), { ok: true, value: ZOOM_MAX });
+  assert.deepEqual(parseZoomPercent(""), { ok: false, value: null });
+  assert.deepEqual(parseZoomPercent("abc"), { ok: false, value: null });
+});
+
+test("zoom is remembered per orientation; anything unusable falls back to 100%", () => {
+  assert.deepEqual(normalizeZoomPrefs({ landscape: 1.13, portrait: 1.5 }), { landscape: 1.13, portrait: 1.5 });
+  assert.deepEqual(normalizeZoomPrefs({ landscape: 9, portrait: 0.5 }), { landscape: ZOOM_MAX, portrait: 1 });
+  assert.deepEqual(normalizeZoomPrefs({ landscape: "x" }), { landscape: 1, portrait: 1 });
+  assert.deepEqual(normalizeZoomPrefs(undefined), { landscape: 1, portrait: 1 });
+  assert.deepEqual(normalizeZoomPrefs(1.5), { landscape: 1, portrait: 1 });
 });
 
 test("a zoomed page cannot be dragged past the screen edge", () => {
