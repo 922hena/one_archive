@@ -712,6 +712,8 @@ export default {
     zoomInvalid: "Enter a number from {min} to {max}.",
     pinch: "Pinch to zoom in Perform",
     pinchHint: "Zoom with two fingers and move a zoomed page while the layout is locked. Saved on this device.",
+    autoFullscreen: "Open in full screen",
+    autoFullscreenHint: "Hides the browser and phone bars when Performance Mode opens. On a phone or tablet, if they come back (for example after Back), tap the score once to hide them again. Saved on this device.",
     fitWidth: "Fit width",
     pagesOnScreen: "Pages",
     pagesOne: "Show 1 page on screen",

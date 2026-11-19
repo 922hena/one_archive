@@ -90,6 +90,7 @@ function loadPrefs() {
     perView: normalizePerView(saved.perView ?? (saved.twoUp === true ? 2 : 1)),
     zoom: normalizeZoomPrefs(saved.zoom),
     pinch: saved.pinch !== false, // two-finger zoom while the layout is locked; on unless turned off
+    fullscreen: saved.fullscreen !== false, // open Performance Mode in full screen; on unless turned off
     autoDefault: fallback.ok && fallback.value ? fallback.value : AUTO_DEFAULT,
     quick: Array.isArray(saved.quick) ? QUICK_KINDS.filter((kind) => saved.quick.includes(kind)) : [],
     corner: CORNERS.includes(saved.corner) ? saved.corner : CORNERS[0]
@@ -196,6 +197,9 @@ export function openPerformance(ctx, { title, songs }) {
   const zoomSaved = prefs.zoom; // { landscape, portrait }
   let zoom = zoomSaved[orientation];
   let pinch = prefs.pinch;
+  let autoFull = prefs.fullscreen;
+  // true while the score should fill the screen: if it drops out (Back, switching apps), the next tap brings it back
+  let wantFull = false;
   let zoomOpen = false;
   let pan = { x: 0, y: 0 };
   // Perform (default): only the score, layout locked. Edit: the layout tools can be used.
@@ -297,6 +301,7 @@ export function openPerformance(ctx, { title, songs }) {
   const opacityInput = h("input", { type: "range", id: "display-opacity", class: "display-range", min: "20", max: "100", step: "5", "aria-label": t("perform.arrowOpacity"), oninput: () => changeDisplay({ opacity: Number(opacityInput.value) }) });
   const brightnessInput = h("input", { type: "range", id: "display-brightness", class: "display-range", min: "40", max: "100", step: "5", "aria-label": t("perform.brightness"), oninput: () => changeDisplay({ brightness: Number(brightnessInput.value) }) });
   const pinchInput = h("input", { type: "checkbox", id: "display-pinch", class: "display-check", onchange: () => setPinch(pinchInput.checked) });
+  const autoFullInput = h("input", { type: "checkbox", id: "display-fullscreen", class: "display-check", onchange: () => setAutoFull(autoFullInput.checked) });
   const quickChecks = QUICK_KINDS.map((kind) => {
     const id = `quick-${kind}`;
     const input = h("input", { type: "checkbox", id, class: "display-check", onchange: () => setQuick(kind, input.checked) });
@@ -338,6 +343,11 @@ export function openPerformance(ctx, { title, songs }) {
       h("strong", { class: "display-sub", text: t("perform.zoomTitle") }),
       h("div", { class: "auto-line" }, h("label", { for: "display-pinch", text: t("perform.pinch") }), pinchInput),
       h("p", { class: "auto-hint", text: t("perform.pinchHint") })
+    ),
+    document.fullscreenEnabled && h("div", { class: "auto-body display-quick" },
+      h("strong", { class: "display-sub", text: t("viewer.fullscreen") }),
+      h("div", { class: "auto-line" }, h("label", { for: "display-fullscreen", text: t("perform.autoFullscreen") }), autoFullInput),
+      h("p", { class: "auto-hint", text: t("perform.autoFullscreenHint") })
     )
   );
   // Zoom panel: 1% steps, opened from the zoom number in Edit.
@@ -425,7 +435,7 @@ export function openPerformance(ctx, { title, songs }) {
   );
 
   function persistPrefs() {
-    savePrefs({ perView: perViewSaved, zoom: zoomSaved, pinch, autoDefault, quick, corner });
+    savePrefs({ perView: perViewSaved, zoom: zoomSaved, pinch, fullscreen: autoFull, autoDefault, quick, corner });
   }
 
   function showLoading() {
@@ -891,6 +901,14 @@ export function openPerformance(ctx, { title, songs }) {
     persistPrefs();
   }
 
+  // Applies from the next opening; turning it off also stops bringing full screen back on a tap.
+  function setAutoFull(on) {
+    if (locked) return;
+    autoFull = on;
+    if (!on) wantFull = false;
+    persistPrefs();
+  }
+
   function fitWidth() {
     if (locked) return;
     const { content, box } = sizes();
@@ -1076,6 +1094,7 @@ export function openPerformance(ctx, { title, songs }) {
     opacityInput.value = String(settings.opacity);
     brightnessInput.value = String(settings.brightness);
     pinchInput.checked = pinch;
+    autoFullInput.checked = autoFull;
     Object.keys(NAV_SIZES).forEach((name, n) => sizeButtons[n].setAttribute("aria-pressed", String(name === settings.size)));
     updateQuick();
   }
@@ -1256,6 +1275,7 @@ export function openPerformance(ctx, { title, songs }) {
     else if (!onButton && event.key === "0") return void setZoom(1, canZoomByHand());
     if (!step) return;
     event.preventDefault();
+    enterFullscreen(); // a pedal press also brings full screen back, and still turns the page
     const now = Date.now();
     // pedals and held keys can fire twice; one press = one page
     if (event.repeat || now - lastKeyTurn < KEY_GAP_MS) return;
@@ -1328,6 +1348,8 @@ export function openPerformance(ctx, { title, songs }) {
       return;
     }
     if (Math.abs(dx) > TAP_PX || Math.abs(dy) > TAP_PX) return;
+    // the first tap after full screen dropped out only brings it back
+    if (enterFullscreen()) return;
     const box = stage.getBoundingClientRect();
     const position = (event.clientX - box.left) / box.width;
     if (position < 0.35) turn(-1);
@@ -1364,11 +1386,27 @@ export function openPerformance(ctx, { title, songs }) {
 
   async function toggleFullscreen() {
     try {
-      if (document.fullscreenElement) await document.exitFullscreen();
-      else await dialog.requestFullscreen();
+      if (document.fullscreenElement) {
+        wantFull = false; // left on purpose: a tap must not bring it back
+        await document.exitFullscreen();
+      } else {
+        wantFull = true;
+        await dialog.requestFullscreen();
+      }
     } catch {
+      wantFull = false;
       flash(t("viewer.fullscreenFailed"));
     }
+  }
+
+  // Browsers allow full screen only right after a tap or key press. On opening (keepTrying) a refusal
+  // leaves one more try for the first tap; after that it stops, so taps go back to turning pages.
+  function enterFullscreen(keepTrying = false) {
+    if (closed || !wantFull || document.fullscreenElement || !document.fullscreenEnabled) return false;
+    dialog.requestFullscreen().catch(() => {
+      if (!keepTrying) wantFull = false;
+    });
+    return true;
   }
 
   function onFullscreenChange() {
@@ -1377,6 +1415,9 @@ export function openPerformance(ctx, { title, songs }) {
     }
     // Full screen shows only the score; the menu button (faint) brings the bars back.
     if (document.fullscreenElement && toolsShown) toggleTools(false);
+    // with a mouse, leaving full screen (Esc) is on purpose; on phones and tablets Back or an edge swipe
+    // drops it easily, so the next tap brings it back
+    if (!document.fullscreenElement && !coarse) wantFull = false;
   }
 
   const previousOverflow = document.documentElement.style.overflow;
@@ -1462,6 +1503,10 @@ export function openPerformance(ctx, { title, songs }) {
   document.documentElement.style.overflow = "hidden";
   document.body.append(dialog);
   dialog.showModal();
+  if (autoFull) {
+    wantFull = true;
+    enterFullscreen(true);
+  }
 
   keepAwake();
   loadAllSongs();
