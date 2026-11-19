@@ -89,21 +89,54 @@ export function fitWidthZoom(content, box) {
   return clampZoom(box.w / content.w);
 }
 
-// ---- several pages on one screen (1 to 4) ----
+// ---- several pages on one screen (1 to 4 in landscape, 1 to 3 in portrait) ----
 
 export const MAX_PER_VIEW = 4;
+const MAX_PER_VIEW_PORTRAIT = 3;
 
-export function clampPerView(count) {
-  const n = Math.round(Number(count));
-  return Number.isFinite(n) ? Math.min(MAX_PER_VIEW, Math.max(1, n)) : 1;
+export function maxPerView(orientation) {
+  return orientation === "portrait" ? MAX_PER_VIEW_PORTRAIT : MAX_PER_VIEW;
 }
 
-// Grid for that many pages on one screen: 1, 2 or 3 side by side; 4 as 2 x 2.
-// vertical = pages stacked top to bottom (Double Vertical); four pages are always 2 x 2.
-export function gridFor(perView, vertical = false) {
-  const n = clampPerView(perView);
-  if (n >= 4) return { cols: 2, rows: 2 };
-  return vertical ? { cols: 1, rows: n } : { cols: n, rows: 1 };
+export function clampPerView(count, max = MAX_PER_VIEW) {
+  const n = Math.round(Number(count));
+  return Number.isFinite(n) ? Math.min(max, Math.max(1, n)) : 1;
+}
+
+// The screen orientation decides the arrangement: landscape puts 1, 2 or 3 pages side by side and 4 as 2 x 2;
+// portrait stacks 1, 2 or 3 pages top to bottom.
+export function gridFor(perView, orientation = "landscape") {
+  const n = clampPerView(perView, maxPerView(orientation));
+  if (orientation === "portrait") return { cols: 1, rows: n };
+  return n >= 4 ? { cols: 2, rows: 2 } : { cols: n, rows: 1 };
+}
+
+// Largest size of a page (w x h) that fits a cell without changing its shape, in whole pixels.
+export function fitInto(page, cell) {
+  if (!(page.w > 0 && page.h > 0 && cell.w > 0 && cell.h > 0)) return null;
+  const scale = Math.min(cell.w / page.w, cell.h / page.h);
+  const whole = (value) => Math.max(1, Math.floor(value * scale + 1e-6)); // 1e-6: 595 * (500 / 595) is 499.999…
+  return { w: whole(page.w), h: whole(page.h), scale };
+}
+
+// Pages on one screen touch each other: each page leans toward the middle of the group.
+export function pageAlign(at, { cols, rows }) {
+  const col = at % cols;
+  const row = Math.floor(at / cols);
+  const lean = (place, count) => (count === 1 ? "center" : place === 0 ? "end" : place === count - 1 ? "start" : "center");
+  return { justify: lean(col, cols), align: lean(row, rows) };
+}
+
+// Saved pages-on-screen setting -> one count per orientation. Older versions saved a single number.
+export function normalizePerView(saved) {
+  if (saved && typeof saved === "object") {
+    return {
+      landscape: clampPerView(saved.landscape ?? 1, maxPerView("landscape")),
+      portrait: clampPerView(saved.portrait ?? 1, maxPerView("portrait"))
+    };
+  }
+  const count = saved ?? 1;
+  return { landscape: clampPerView(count, maxPerView("landscape")), portrait: clampPerView(count, maxPerView("portrait")) };
 }
 
 // songIds[i] = song of global page i. One screen never mixes two songs.

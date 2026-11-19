@@ -124,13 +124,17 @@ import {
   clampPan,
   clampPerView,
   clampZoom,
+  fitInto,
   fitWidthZoom,
   formatSeconds,
   gridFor,
+  maxPerView,
   NAV_SIZES,
   nextIndex,
   normalizeDisplay,
+  normalizePerView,
   orientationOf,
+  pageAlign,
   pageTimeKey,
   parseSeconds,
   prevIndex,
@@ -159,22 +163,55 @@ test("fit width zooms a narrow page up to the screen width", () => {
   assert.equal(fitWidthZoom({ w: 0, h: 0 }, { w: 800, h: 600 }), 1);
 });
 
-test("pages on screen are limited to 1-4 and laid out as a grid", () => {
+test("pages on screen: 1-4 in landscape, 1-3 in portrait", () => {
   assert.equal(clampPerView(0), 1);
   assert.equal(clampPerView(3), 3);
   assert.equal(clampPerView(9), 4);
   assert.equal(clampPerView("x"), 1);
-  assert.deepEqual(gridFor(1), { cols: 1, rows: 1 });
-  assert.deepEqual(gridFor(2), { cols: 2, rows: 1 });
-  assert.deepEqual(gridFor(3), { cols: 3, rows: 1 });
-  assert.deepEqual(gridFor(4), { cols: 2, rows: 2 });
+  assert.equal(maxPerView("landscape"), 4);
+  assert.equal(maxPerView("portrait"), 3);
+  assert.equal(clampPerView(4, maxPerView("portrait")), 3);
 });
 
-test("stacked pages go top to bottom; four pages stay 2 x 2", () => {
-  assert.deepEqual(gridFor(1, true), { cols: 1, rows: 1 });
-  assert.deepEqual(gridFor(2, true), { cols: 1, rows: 2 });
-  assert.deepEqual(gridFor(3, true), { cols: 1, rows: 3 });
-  assert.deepEqual(gridFor(4, true), { cols: 2, rows: 2 });
+test("landscape puts 1-3 pages side by side and 4 as 2 x 2", () => {
+  assert.deepEqual(gridFor(1), { cols: 1, rows: 1 });
+  assert.deepEqual(gridFor(2, "landscape"), { cols: 2, rows: 1 });
+  assert.deepEqual(gridFor(3, "landscape"), { cols: 3, rows: 1 });
+  assert.deepEqual(gridFor(4, "landscape"), { cols: 2, rows: 2 });
+});
+
+test("portrait stacks 1-3 pages top to bottom", () => {
+  assert.deepEqual(gridFor(1, "portrait"), { cols: 1, rows: 1 });
+  assert.deepEqual(gridFor(2, "portrait"), { cols: 1, rows: 2 });
+  assert.deepEqual(gridFor(3, "portrait"), { cols: 1, rows: 3 });
+  assert.deepEqual(gridFor(4, "portrait"), { cols: 1, rows: 3 });
+});
+
+test("a page fills its cell without changing shape", () => {
+  // A4-shaped page in half of a 1000 x 800 landscape screen: the height decides
+  assert.deepEqual(fitInto({ w: 595, h: 842 }, { w: 500, h: 800 }), { w: 500, h: 707, scale: 500 / 595 });
+  assert.deepEqual(fitInto({ w: 595, h: 842 }, { w: 1000, h: 400 }), { w: 282, h: 400, scale: 400 / 842 });
+  assert.equal(fitInto({ w: 0, h: 0 }, { w: 500, h: 800 }), null);
+  assert.equal(fitInto({ w: 595, h: 842 }, { w: 0, h: 800 }), null);
+});
+
+test("pages lean toward each other so they touch", () => {
+  assert.deepEqual(pageAlign(0, { cols: 1, rows: 1 }), { justify: "center", align: "center" });
+  assert.deepEqual(pageAlign(0, { cols: 2, rows: 1 }), { justify: "end", align: "center" });
+  assert.deepEqual(pageAlign(1, { cols: 2, rows: 1 }), { justify: "start", align: "center" });
+  assert.deepEqual(pageAlign(1, { cols: 3, rows: 1 }), { justify: "center", align: "center" });
+  assert.deepEqual(pageAlign(0, { cols: 1, rows: 3 }), { justify: "center", align: "end" });
+  assert.deepEqual(pageAlign(2, { cols: 1, rows: 3 }), { justify: "center", align: "start" });
+  assert.deepEqual(pageAlign(3, { cols: 2, rows: 2 }), { justify: "start", align: "start" });
+});
+
+test("pages on screen are remembered per orientation; an old single number fills both", () => {
+  assert.deepEqual(normalizePerView({ landscape: 4, portrait: 2 }), { landscape: 4, portrait: 2 });
+  assert.deepEqual(normalizePerView({ landscape: 9, portrait: 4 }), { landscape: 4, portrait: 3 });
+  assert.deepEqual(normalizePerView(4), { landscape: 4, portrait: 3 });
+  assert.deepEqual(normalizePerView(2), { landscape: 2, portrait: 2 });
+  assert.deepEqual(normalizePerView(undefined), { landscape: 1, portrait: 1 });
+  assert.deepEqual(normalizePerView({}), { landscape: 1, portrait: 1 });
 });
 
 test("seconds can also be typed as minutes:seconds", () => {

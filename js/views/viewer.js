@@ -12,13 +12,17 @@ import {
   clampPan,
   clampPerView,
   clampZoom,
+  fitInto,
   fitWidthZoom,
   formatSeconds,
   gridFor,
   locatePage,
+  maxPerView,
   nextIndex,
   normalizeDisplay,
+  normalizePerView,
   orientationOf,
+  pageAlign,
   pageTimeKey,
   parseSeconds,
   prevIndex,
@@ -55,7 +59,7 @@ const MENU_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M
 
 let pdfjsPromise = null;
 
-// Device-only settings: pages on screen, default auto-turn seconds, and seconds per page.
+// Device-only settings: pages on screen (one count per orientation), default auto-turn seconds, and seconds per page.
 // Nothing here is sent to the server.
 function readJson(key) {
   try {
@@ -79,9 +83,8 @@ function loadPrefs() {
   const fallback = parseSeconds(saved.autoDefault);
   return {
     // older versions saved only "two pages on/off"
-    perView: clampPerView(saved.perView ?? (saved.twoUp === true ? 2 : 1)),
+    perView: normalizePerView(saved.perView ?? (saved.twoUp === true ? 2 : 1)),
     autoDefault: fallback.ok && fallback.value ? fallback.value : AUTO_DEFAULT,
-    vertical: saved.vertical === true, // two or three pages stacked top to bottom
     quick: Array.isArray(saved.quick) ? QUICK_KINDS.filter((kind) => saved.quick.includes(kind)) : [],
     corner: CORNERS.includes(saved.corner) ? saved.corner : CORNERS[0]
   };
@@ -180,8 +183,9 @@ export function openPerformance(ctx, { title, songs }) {
   let resizeTimer = null;
 
   const prefs = loadPrefs();
-  let perView = prefs.perView; // pages on one screen, 1 to 4
-  let vertical = prefs.vertical;
+  const perViewSaved = prefs.perView; // { landscape: 1 to 4, portrait: 1 to 3 }
+  let orientation = orientationOf(window.innerWidth, window.innerHeight);
+  let perView = perViewSaved[orientation]; // pages on one screen in the current orientation
   let shownIndex = 0; // first page of what is really on screen (index moves before the new pages are ready)
   let zoom = 1;
   let pan = { x: 0, y: 0 };
@@ -245,17 +249,9 @@ export function openPerformance(ctx, { title, songs }) {
       onclick: () => setPerView(n + 1)
     }, String(n + 1))
   );
-  const stackButton = h("button", {
-    type: "button",
-    class: "viewer-tool",
-    title: t("perform.stackHint"),
-    "aria-pressed": String(vertical),
-    onclick: () => setVertical(!vertical)
-  }, t("perform.stack"));
   const viewGroup = h("div", { class: "viewer-view", role: "group", "aria-label": t("perform.pagesOnScreen") },
     h("span", { class: "viewer-label", text: t("perform.pagesOnScreen") }),
-    ...viewButtons,
-    stackButton
+    ...viewButtons
   );
   const autoButton = h("button", { type: "button", class: "viewer-tool", "aria-pressed": "false", "aria-expanded": "false", onclick: () => toggleAutoPanel() }, t("perform.autoButton"));
   const autoStart = h("button", { type: "button", class: "viewer-tool is-primary", onclick: toggleAuto }, t("perform.autoStart"));
@@ -385,7 +381,7 @@ export function openPerformance(ctx, { title, songs }) {
   );
 
   function persistPrefs() {
-    savePrefs({ perView, autoDefault, vertical, quick, corner });
+    savePrefs({ perView: perViewSaved, autoDefault, quick, corner });
   }
 
   function showLoading() {
@@ -617,13 +613,22 @@ export function openPerformance(ctx, { title, songs }) {
     return img;
   }
 
+  // Every page fills its cell of the grid, so the pages touch each other and the screen edges.
+  function currentGrid() {
+    return gridFor(perView, orientation);
+  }
+
+  function cellSize() {
+    const box = holder.getBoundingClientRect();
+    const { cols, rows } = currentGrid();
+    return { w: box.width / cols, h: box.height / rows };
+  }
+
   async function renderPdf(page) {
     const doc = await pdfDoc(page.file);
     const pdfPage = await doc.getPage(page.pdfPage);
     const base = pdfPage.getViewport({ scale: 1 });
-    const box = holder.getBoundingClientRect();
-    const { cols, rows } = gridFor(perView, vertical);
-    const fit = Math.max(0.1, Math.min((box.width / cols - 16) / base.width, (box.height / rows - 16) / base.height));
+    const fit = Math.max(0.1, fitInto({ w: base.width, h: base.height }, cellSize())?.scale ?? 0);
     let pixelRatio = Math.min(window.devicePixelRatio || 1, 3);
     const area = base.width * fit * pixelRatio * base.height * fit * pixelRatio;
     if (area > MAX_CANVAS_PIXELS) pixelRatio *= Math.sqrt(MAX_CANVAS_PIXELS / area);
@@ -671,6 +676,21 @@ export function openPerformance(ctx, { title, songs }) {
     return pages.map((page) => page.song);
   }
 
+  // Pictures are sized here (PDF pages are drawn at their size); every page leans toward the others.
+  function placePages(elements, grid) {
+    const cell = cellSize();
+    elements.forEach((el, n) => {
+      if (el instanceof HTMLImageElement) {
+        const size = fitInto({ w: el.naturalWidth, h: el.naturalHeight }, cell);
+        el.style.width = size ? `${size.w}px` : "";
+        el.style.height = size ? `${size.h}px` : "";
+      }
+      const { justify, align } = pageAlign(n, grid);
+      el.style.justifySelf = justify;
+      el.style.alignSelf = align;
+    });
+  }
+
   async function show(at) {
     index = at;
     const token = ++showToken;
@@ -684,9 +704,10 @@ export function openPerformance(ctx, { title, songs }) {
       const span = spreadSize(pageSongs(), index, perView);
       const elements = await Promise.all(Array.from({ length: span }, (_, n) => renderPage(index + n)));
       if (token !== showToken || closed) return;
+      const { cols, rows } = currentGrid();
+      placePages(elements, { cols, rows });
       if (perView > 1) {
         // The same grid for every screen, so a short last screen keeps the same page size.
-        const { cols, rows } = gridFor(perView, vertical);
         const spread = h("div", { class: "viewer-spread" }, ...elements);
         spread.style.setProperty("--cols", String(cols));
         spread.style.setProperty("--rows", String(rows));
@@ -777,38 +798,30 @@ export function openPerformance(ctx, { title, songs }) {
   function fitWidth() {
     if (locked) return;
     const { content, box } = sizes();
-    setZoom(fitWidthZoom(content, { w: box.w - 16, h: box.h }));
+    setZoom(fitWidthZoom(content, box));
   }
 
-  // Pages on one screen (1 to 4). Pages are drawn smaller for more pages, so they are drawn again.
+  // Pages on one screen: 1 to 4 in landscape, 1 to 3 in portrait, remembered per orientation.
+  // Pages are drawn smaller for more pages, so they are drawn again.
   function setPerView(count, fromQuick = false) {
     if (locked && !fromQuick) return;
-    const next = clampPerView(count);
+    const next = clampPerView(count, maxPerView(orientation));
     if (next === perView) return;
     perView = next;
-    viewButtons.forEach((button, n) => button.setAttribute("aria-pressed", String(n + 1 === perView)));
+    perViewSaved[orientation] = next;
     persistPrefs();
-    updateStackButton();
+    updateViewButtons();
     updateQuick();
     rendered.clear();
     show(index);
   }
 
-  // Two or three pages one above the other (Double Vertical). Four pages are always 2 x 2.
-  function setVertical(next) {
-    if (locked) return;
-    vertical = next;
-    persistPrefs();
-    updateStackButton();
-    if (perView > 1 && perView < 4) {
-      rendered.clear();
-      show(index);
-    }
-  }
-
-  function updateStackButton() {
-    stackButton.setAttribute("aria-pressed", String(vertical));
-    stackButton.disabled = locked || perView === 1 || perView >= MAX_PER_VIEW;
+  function updateViewButtons() {
+    const max = maxPerView(orientation);
+    viewButtons.forEach((button, n) => {
+      button.hidden = n + 1 > max;
+      button.setAttribute("aria-pressed", String(n + 1 === perView));
+    });
   }
 
   // ---- auto page turn: each page has its own seconds (0.1 steps); stops at the end of a Score ----
@@ -1012,7 +1025,7 @@ export function openPerformance(ctx, { title, songs }) {
     dialog.classList.toggle("is-locked", locked);
     dialog.classList.toggle("is-editing", editing);
     for (const button of [zoomOutButton, zoomLabel, zoomInButton, fitWidthButton, ...viewButtons]) button.disabled = locked;
-    updateStackButton();
+    updateViewButtons();
     applyZoom(); // restores the zoom-out / zoom-in limits
   }
 
@@ -1228,9 +1241,16 @@ export function openPerformance(ctx, { title, songs }) {
   function onResize() {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
-      applyDisplay(); // turning the device switches to its portrait / landscape settings
-      if (!pages.some((page) => page.pdfPage)) return;
-      rendered.clear();
+      // turning the device switches to its portrait / landscape arrangement and settings
+      const now = displayKey();
+      if (now !== orientation) {
+        orientation = now;
+        perView = perViewSaved[orientation];
+        updateViewButtons();
+      }
+      applyDisplay();
+      if (!pages.length) return;
+      if (pages.some((page) => page.pdfPage)) rendered.clear();
       show(index);
     }, 200);
   }
@@ -1248,6 +1268,8 @@ export function openPerformance(ctx, { title, songs }) {
     if (fullscreenButton) {
       fullscreenButton.textContent = document.fullscreenElement ? t("viewer.exitFullscreen") : t("viewer.fullscreen");
     }
+    // Full screen shows only the score; the menu button (faint) brings the bars back.
+    if (document.fullscreenElement && toolsShown) toggleTools(false);
   }
 
   const previousOverflow = document.documentElement.style.overflow;

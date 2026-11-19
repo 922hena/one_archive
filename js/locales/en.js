@@ -755,8 +755,6 @@ export default {
     brightness: "Page brightness",
     displayHint: "Saved on this device, separately for portrait and landscape.",
     displayReset: "Reset",
-    stack: "Stack",
-    stackHint: "Show 2 or 3 pages one above the other",
     notes: "Notes",
     notesTitle: "Notes tools",
     notesHide: "Hide notes",
