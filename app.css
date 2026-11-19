@@ -617,27 +617,35 @@ p.today-masses { margin-top: 4px; }
 .mass-music { margin-top: 24px; }
 .mass-music > h2 { margin: 0 0 12px; font-size: 17px; line-height: 24px; font-weight: 600; }
 
-/* music rows: number | Latin role | work + composer | menu — same grid in Mass and Layout */
+/* music rows: number | role/display name | work + composer | menu — same grid in Mass and Layout.
+   Role column is wide enough for one line of a Korean display name like "왕이신 나의 하느님(특송먼저)".
+   Empty "No score" stays compact so the name keeps the room. */
 .music-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--oa-line); }
 .music-row, .role-row {
-  display: grid; grid-template-columns: 28px minmax(72px, 84px) minmax(0, 1fr) 44px; column-gap: 8px; align-items: center;
+  display: grid; grid-template-columns: 28px minmax(0, 1fr) auto 44px; column-gap: 8px; align-items: center;
   min-height: 48px; padding: 4px 0; border-bottom: 1px solid var(--oa-line); font-variant-numeric: tabular-nums;
 }
 .music-row > *, .role-row > * { min-width: 0; }
 .music-no { font-size: 12px; color: var(--oa-muted); }
-.music-role { font-size: 13px; line-height: 18px; font-weight: 500; color: var(--oa-text); overflow-wrap: break-word; }
-.music-role small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
-.music-work { display: flex; flex-direction: column; min-width: 0; }
+.music-role { min-width: 0; font-size: 13px; line-height: 18px; font-weight: 500; color: var(--oa-text); }
+.music-role-primary,
+.music-role small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.music-role small { font-size: 12px; font-weight: 400; color: var(--muted); }
+.music-work { display: flex; flex-direction: column; min-width: 0; max-width: 9.5rem; }
 .music-title { display: block; padding: 0; border: 0; background: none; text-align: left; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--oa-text); cursor: pointer; overflow-wrap: anywhere; }
 button.music-title:hover { text-decoration: underline; text-underline-offset: 3px; }
 .music-composer { font-size: 12px; line-height: 18px; color: var(--muted); }
-.music-work.is-empty .music-title { color: var(--oa-muted); font-weight: 400; cursor: default; }
+.music-work.is-empty { max-width: 4.75rem; }
+.music-work.is-empty .music-title { color: var(--oa-muted); font-size: 12px; line-height: 18px; font-weight: 400; cursor: default; white-space: nowrap; }
 .music-empty-cell { display: block; }
 
-/* ... menu */
+/* ... menu — a little stronger so it is easy to find on a dense music list */
 .menu { position: relative; justify-self: end; }
-.menu-button { width: 44px; height: 44px; border: 0; border-radius: var(--radius); background: none; color: var(--oa-text); font-size: 20px; line-height: 1; cursor: pointer; }
-.menu-button:hover, .menu-button[aria-expanded="true"] { background: var(--oa-subtle); }
+.menu-button {
+  width: 44px; height: 44px; border: 1px solid var(--oa-line); border-radius: var(--radius);
+  background: var(--oa-subtle); color: var(--oa-black); font-size: 22px; font-weight: 700; line-height: 1; cursor: pointer;
+}
+.menu-button:hover, .menu-button[aria-expanded="true"] { background: #fff; border-color: var(--line-strong); }
 .menu-list { position: absolute; right: 0; top: 100%; z-index: 30; min-width: 200px; margin: 0; padding: 4px; list-style: none; background: #fff; border: 1px solid var(--oa-line); border-radius: var(--radius-card); box-shadow: 0 4px 16px rgba(11, 11, 13, 0.08); }
 .menu-item { display: flex; align-items: center; width: 100%; min-height: 44px; padding: 0 12px; border: 0; border-radius: var(--radius); background: none; color: var(--oa-text); text-align: left; font-size: 14px; cursor: pointer; }
 .menu-item:hover, .menu-item:focus-visible { background: var(--oa-subtle); }
@@ -653,7 +661,7 @@ button.music-title:hover { text-decoration: underline; text-underline-offset: 3p
 @media (min-width: 768px) { .layout-fields { grid-template-columns: 1fr 1fr; } }
 .role-checklist { border: 0; border-radius: 0; }
 .role-tools { padding: 0 0 8px; border-bottom: 0; background: none; flex-wrap: wrap; }
-.role-checklist .role-row { grid-template-columns: 44px 28px minmax(72px, 100px) minmax(0, 1fr); padding: 4px 0; }
+.role-checklist .role-row { grid-template-columns: 44px 28px minmax(0, 1fr) auto; padding: 4px 0; }
 .role-row:last-child { border-bottom: 1px solid var(--oa-line); }
 .role-check { display: grid; place-items: center; width: 44px; height: 44px; cursor: pointer; }
 .role-check input { width: 18px; height: 18px; margin: 0; }

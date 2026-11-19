@@ -270,7 +270,7 @@
 
 .oa-music-row {
   display: grid;
-  grid-template-columns: 28px minmax(72px, 84px) minmax(0, 1fr) 44px;
+  grid-template-columns: 28px minmax(0, 1fr) auto 44px;
   align-items: center;
   column-gap: 8px;
   min-height: var(--oa-music-row-min-height);

@@ -894,7 +894,13 @@ export async function renderMass(container, ctx, { id }) {
       return h("li", { class: "music-row" },
         index === 0 ? h("span", { class: "music-no num", text: number }) : blank(),
         index === 0
-          ? h("span", { class: "music-role", translate: "no" }, itemName, slot.display_name && role?.name_la ? h("small", { text: role.name_la }) : null)
+          ? h(
+              "span",
+              { class: "music-role", translate: "no" },
+              // Official Latin (or EN/KO fallback) on top; the member's display memo underneath.
+              h("span", { class: "music-role-primary", text: roleLabel(role) || t("mass.unnamedItem") }),
+              slot.display_name ? h("small", { text: slot.display_name }) : null
+            )
           : blank(),
         entry
           ? h("div", { class: "music-work", translate: "no" },
